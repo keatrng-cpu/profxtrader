@@ -241,6 +241,14 @@
   .chart-canvas{width:100%;height:380px}
   .chart-canvas-htf{width:100%;height:170px}
   @media (min-width:1180px){ .chart-canvas{height:460px} }
+  /* Fullscreen keeps the whole card — toolbar, both panes, play/step
+     controls — so every tool built for the chart still works identically,
+     just bigger. vh-based sizing here (not a fixed px) is what makes the
+     chart genuinely fill the screen instead of floating in a mostly-empty
+     black box, since a real display can be any height. */
+  #rp-chartCard:fullscreen{background:var(--bg);padding:16px;overflow-y:auto}
+  #rp-chartCard:fullscreen .chart-canvas{height:68vh}
+  #rp-chartCard:fullscreen .chart-canvas-htf{height:20vh}
 
   /* ---------- footer disclaimer ---------- */
   footer{color:var(--dim)!important;border-top:1px solid var(--border)!important}
@@ -629,7 +637,7 @@
       <button class="btn ghost tiny" id="cc-reset" type="button">Reset colors</button>
     </div>
   </div>
-  <div class="card" style="padding:8px">
+  <div class="card" style="padding:8px" id="rp-chartCard">
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;padding:0 4px">
       <span class="note" style="margin:0">Draw:</span>
       <button class="btn ghost tiny" id="rp-tool-none" type="button" data-tool="none">Cursor</button>
@@ -640,15 +648,21 @@
       <button class="btn ghost tiny" id="rp-tool-marker" type="button" data-tool="marker">Rejection marker</button>
       <label class="check" style="margin:0 0 0 8px;border:0;padding:0">
         <input type="checkbox" id="rp-killzones"> <span style="font-size:11px;color:var(--muted)">Shade kill zones</span></label>
-      <button class="btn ghost tiny" id="rp-clear-drawings" type="button" style="margin-left:auto">Clear drawings</button>
+      <button class="btn ghost tiny" id="rp-clear-drawings" type="button">Clear drawings</button>
+      <button class="btn ghost tiny" id="rp-fullscreen" type="button" style="margin-left:auto">⛶ Fullscreen</button>
     </div>
     <div style="position:relative">
       <div id="rp-canvas" class="chart-canvas"></div>
       <div id="rp-canvas-empty" class="note" style="position:absolute;left:14px;top:10px;margin:0;pointer-events:none">Load bars and start a session.</div>
       <div id="rp-canvas-stamp-l" class="note" style="position:absolute;left:8px;bottom:2px;margin:0;pointer-events:none;font-size:11px"></div>
       <div id="rp-canvas-stamp-r" class="note" style="position:absolute;right:8px;bottom:2px;margin:0;pointer-events:none;font-size:11px"></div>
+      <div id="rp-quickTrade" style="display:none;position:fixed;z-index:80;background:var(--surface);
+        border:1px solid var(--accent);border-radius:10px;padding:8px;box-shadow:var(--shadow);gap:6px">
+        <button class="btn tiny" id="rp-quickLong" type="button" style="background:var(--green)">Long here</button>
+        <button class="btn tiny" id="rp-quickShort" type="button" style="background:var(--red)">Short here</button>
+      </div>
     </div>
-    <div class="note" id="rp-toolNote" style="margin-top:6px"></div>
+    <div class="note" id="rp-toolNote" style="margin-top:6px">Double-click the chart (while flat) to quick-place a bracket — drag the stop/target lines afterward like a slider.</div>
     <div style="position:relative;margin-top:6px">
       <div id="rp-canvas-htf" class="chart-canvas-htf"></div>
     </div>
@@ -5540,6 +5554,7 @@ function rpWireLtfInteractions(pane) {
   });
 
   rpWireDrawingTool(pane);
+  rpWireDoubleClickTrade(pane);
 }
 
 /* ---------------------------------------------------------------- */
@@ -5571,7 +5586,8 @@ function rpSetTool(tool) {
   });
   var pane = RPCharts.getPane('ltf');
   if (pane) pane.chart.chartElement().style.cursor = rpTool === 'none' ? 'default' : 'crosshair';
-  $('rp-toolNote').textContent = rpTool === 'none' ? '' :
+  $('rp-toolNote').textContent = rpTool === 'none' ?
+    'Double-click the chart (while flat) to quick-place a bracket — drag the stop/target lines afterward like a slider.' :
     rpTool === 'marker' ? 'Click a bar to drop a rejection marker.' :
     rpTool === 'ray' ? 'Click a price to draw a ray from there to now — it keeps extending as you step forward.' :
     'Click a start point, then click again to finish the ' + TOOL_LABELS[rpTool] + '. Esc cancels.';
@@ -5625,6 +5641,73 @@ function rpWireDrawingTool(pane) {
     rpRedrawDrawings(pane, null);
     $('rp-toolNote').textContent = 'Click a start point, then click again to finish the ' +
       TOOL_LABELS[rpTool] + '. Esc cancels.';
+  });
+}
+
+/* ---------------------------------------------------------------- */
+/* FULLSCREEN — the whole chart card (toolbar + both panes + play/step),  */
+/* so every tool still works identically at full size, not just the       */
+/* candles. autoSize:true on the chart already re-measures on any resize  */
+/* of its container via ResizeObserver, so entering/leaving fullscreen     */
+/* needs no manual chart-resize call — the CSS in the :fullscreen rules     */
+/* above is the only thing that has to change.                              */
+/* ---------------------------------------------------------------- */
+function rpSyncFullscreenBtn() {
+  var on = document.fullscreenElement === $('rp-chartCard');
+  $('rp-fullscreen').textContent = on ? '⤢ Exit fullscreen' : '⛶ Fullscreen';
+}
+$('rp-fullscreen') && $('rp-fullscreen').addEventListener('click', function () {
+  // Some embedding contexts (e.g. an iframe without allow="fullscreen") reject
+  // this with a promise rejection rather than throwing synchronously — catch
+  // it so that's never an uncaught rejection in the console.
+  if (document.fullscreenElement) document.exitFullscreen().catch(function () {});
+  else if ($('rp-chartCard').requestFullscreen) $('rp-chartCard').requestFullscreen().catch(function () {});
+});
+document.addEventListener('fullscreenchange', rpSyncFullscreenBtn);
+
+/* ---------------------------------------------------------------- */
+/* DOUBLE-CLICK TO TRADE — quick bracket placement while flat. Picks a     */
+/* sensible starting stop/target (0.3% / 0.6% off the clicked price — a    */
+/* deliberately generic, instrument-agnostic default, not a real signal)   */
+/* purely so there's something to drag; the actual size/levels are always  */
+/* whatever the trader drags them to or types before hitting Place.        */
+/* ---------------------------------------------------------------- */
+function rpHideQuickTrade() { $('rp-quickTrade').style.display = 'none'; }
+document.addEventListener('click', function (e) {
+  if (!$('rp-quickTrade').contains(e.target) && e.target.id !== 'rp-quickLong' && e.target.id !== 'rp-quickShort') rpHideQuickTrade();
+});
+function rpQuickPlace(side, price) {
+  var dist = price * 0.003;
+  $('rp-side').value = side;
+  $('rp-side').dispatchEvent(new Event('change', { bubbles: true }));
+  $('rp-stop').value = (side === 'long' ? price - dist : price + dist).toFixed(2);
+  $('rp-stop').dispatchEvent(new Event('input', { bubbles: true }));
+  $('rp-tgt').value = (side === 'long' ? price + dist * 2 : price - dist * 2).toFixed(2);
+  $('rp-tgt').dispatchEvent(new Event('input', { bubbles: true }));
+  rpRedrawOrderLines();
+  rpHideQuickTrade();
+  $('rp-pickMsg').innerHTML = '<span class="pos">Draft ' + side + ' bracket set from your double-click ' +
+    '— drag the stop/target lines on the chart to adjust, then review the Order card below.</span>';
+}
+function rpWireDoubleClickTrade(pane) {
+  var el = pane.chart.chartElement();
+  el.addEventListener('dblclick', function (e) {
+    if (!sess || sess.position || sess.closed || rpTool !== 'none' || rpPickMode) return;
+    var rect = el.getBoundingClientRect();
+    var price = pane.series.coordinateToPrice(e.clientY - rect.top);
+    if (price == null) return;
+    var box = $('rp-quickTrade');
+    box.style.display = 'flex';
+    // Clamped on BOTH ends, not just one — position:fixed coordinates can
+    // land outside the viewport from all sorts of real inputs (a double-tap
+    // near a screen edge on mobile, a trackpad quirk, etc.), and an
+    // off-screen popup with no visible way to dismiss it is worse than a
+    // slightly-mispositioned one.
+    var popW = 140, popH = 70;
+    box.style.left = Math.max(8, Math.min(e.clientX, window.innerWidth - popW - 8)) + 'px';
+    box.style.top = Math.max(8, Math.min(e.clientY - 50, window.innerHeight - popH - 8)) + 'px';
+    $('rp-quickLong').onclick = function () { rpQuickPlace('long', price); };
+    $('rp-quickShort').onclick = function () { rpQuickPlace('short', price); };
   });
 }
 
