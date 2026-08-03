@@ -477,13 +477,13 @@ exports.handler = async function (event) {
       TOKENS[mode], deadline
     );
     const text = clean(raw, 6000);
-    if (!text) return ok({ ok: false, degraded: true, mode: mode, text: FALLBACK[mode] });
+    if (!text) return ok({ ok: false, degraded: true, mode: mode, text: FALLBACK[mode], debugEmpty: true });
     recordUsage(user.id, token, profile, mode, deadline).catch(function () {});   // fire-and-forget
     return ok({
       ok: true, mode: mode, text: text,
       usage: { tier: profile.subscription_tier, used: usedThisPeriod + 1, limit: isPro ? null : FREE_MONTHLY_LIMIT }
     });
   } catch (e) {
-    return ok({ ok: false, degraded: true, mode: mode, text: FALLBACK[mode] });
+    return ok({ ok: false, degraded: true, mode: mode, text: FALLBACK[mode], debugError: String((e && e.message) || e) });
   }
 };
