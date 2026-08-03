@@ -49,13 +49,29 @@ No build command needed; `netlify.toml` points `publish` at the repo root.
 `/` serves the marketing page; the app is at `/app.html` (or `/app`).
 
 ## AI Professor modes
-`live`, `debrief`, `playbook`, `ask`, `tag` (all free-tier, capped 15/mo),
-`weekly` (Pro-only), `followup` (Socratic reply after a `live` response).
+`live`, `debrief`, `playbook`, `ask`, `tag`, `chat` (all free-tier, capped 15/mo),
+`weekly` (Pro-only), `followup` (Socratic reply after a `live` response). `chat`
+is the multi-turn conversation panel under the Replay chart — the client sends
+the running history plus live chart context (revealed bars + structure read)
+on every turn.
 
-The Professor discovers the newest Sonnet model via `/v1/models` at runtime and
-falls back to `claude-sonnet-5` if discovery fails. Thinking is explicitly
-disabled on the request so the deliberately small per-mode token budgets aren't
-consumed by an (adaptive-by-default) reasoning pass.
+The Professor discovers the newest model per tier via `/v1/models` at runtime
+and falls back to `claude-sonnet-5` / `claude-haiku-4-5` if discovery fails.
+Quick single-shot nudges (`live`, `followup`, `tag`) route to Haiku; anything
+meant to be a real conversation or detailed analysis (`chat`, `ask`, `debrief`,
+`playbook`, `weekly`) routes to Sonnet. Thinking is explicitly disabled on
+Sonnet calls so the deliberately small per-mode token budgets aren't consumed
+by an (adaptive-by-default) reasoning pass.
+
+## Bench tab — performance dashboards
+Equity curve (elevated, shares the Risk lab's account/risk assumptions), an
+R-multiple distribution histogram, a daily P&L calendar heatmap, and win-rate
+breakdowns by day-of-week and time-of-day (UTC, 4-hour blocks). All four read
+straight from the already-normalized trades or call `EdgeEngine.computeStats` /
+`Lab.equityCurve` per bucket — none of them re-derive an R-multiple or a
+win/loss classification independently. Time-of-day is only meaningful once a
+trade's Open Date carries a real timestamp; date-only entries all land in the
+00:00–04:00 UTC bucket.
 
 ## Testing
 There is no automated test suite yet. The functions have no npm dependencies, so

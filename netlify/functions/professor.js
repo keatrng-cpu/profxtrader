@@ -18,6 +18,12 @@
 //   debrief   — after a session closes, what the session revealed
 //   playbook  — turn confirmed rules + leaks into written strategy prose
 //   ask       — free-form question, answered against their own stats
+//   chat      — genuine multi-turn conversation under the Replay chart
+//
+// MODEL ROUTING: quick single-shot nudges (live, followup, tag) run on Haiku —
+// they're short, latency-sensitive, and don't need deep reasoning. Anything
+// meant to be a real conversation or a detailed analysis (chat, ask, debrief,
+// playbook, weekly) runs on Sonnet. See MODEL_TIER below.
 //
 // GRACEFUL DEGRADATION: always HTTP 200. No key, timeout, or upstream error
 // returns a deterministic fallback line so the app never blocks on the model.
@@ -27,20 +33,24 @@
 const ANTHROPIC_VERSION = '2023-06-01';
 const MODELS_URL = 'https://api.anthropic.com/v1/models?limit=100';
 const MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
-// Last-resort model, used only if the /v1/models discovery call fails. Must be
-// a CURRENT model id: the old dated snapshot (claude-sonnet-4-20250514) was
-// retired on 2026-06-15 and now 404s, which silently killed the Professor
-// whenever discovery hiccuped. `claude-sonnet-5` is the current Sonnet and the
-// natural fallback for this cost-tier feature. Discovery still prefers whatever
-// the account's newest Sonnet is; this only catches the discovery-failed path.
-const FALLBACK_MODEL = 'claude-sonnet-5';
+// Last-resort models, used only if the /v1/models discovery call fails. Must
+// be CURRENT model ids: the old dated Sonnet snapshot (claude-sonnet-4-20250514)
+// was retired on 2026-06-15 and now 404s, which silently killed the Professor
+// whenever discovery hiccuped. Discovery still prefers whatever the account's
+// newest Sonnet/Haiku is; these only catch the discovery-failed path.
+const FALLBACK_MODEL_SONNET = 'claude-sonnet-5';
+const FALLBACK_MODEL_HAIKU = 'claude-haiku-4-5';
 
 const HANDLER_BUDGET_MS = 9200;
 const DISCOVERY_BUDGET_MS = 2200;
 const MAX_FIELD_CHARS = 6000;
 
-const TOKENS = { live: 220, debrief: 700, playbook: 900, ask: 700, tag: 200, weekly: 650, followup: 180 };
+const TOKENS = { live: 220, debrief: 700, playbook: 900, ask: 700, tag: 200, weekly: 650, followup: 180, chat: 550 };
 const PRO_ONLY_MODES = { weekly: true };
+const MODEL_TIER = {
+  live: 'haiku', followup: 'haiku', tag: 'haiku',
+  debrief: 'sonnet', playbook: 'sonnet', ask: 'sonnet', weekly: 'sonnet', chat: 'sonnet'
+};
 
 const HEADERS = {
   'Content-Type': 'application/json',
@@ -84,11 +94,12 @@ function clean(v, max) {
 
 function ok(body) { return { statusCode: 200, headers: HEADERS, body: JSON.stringify(body) }; }
 
-let cachedModel = null;
+let cachedModel = { sonnet: null, haiku: null };
 
-async function pickModel(key, deadline) {
+async function pickModel(tier, key, deadline) {
   if (process.env.ANTHROPIC_MODEL) return process.env.ANTHROPIC_MODEL;
-  if (cachedModel) return cachedModel;
+  if (cachedModel[tier]) return cachedModel[tier];
+  const pattern = tier === 'haiku' ? /haiku/i : /sonnet/i;
   try {
     const now = Date.now();
     const budget = Math.min(DISCOVERY_BUDGET_MS, (deadline || (now + DISCOVERY_BUDGET_MS)) - now);
@@ -98,21 +109,32 @@ async function pickModel(key, deadline) {
       }, budget);
       if (r.ok) {
         const d = await r.json();
-        const sonnets = (d && Array.isArray(d.data) ? d.data : []).filter(function (m) {
-          return m && typeof m.id === 'string' && /sonnet/i.test(m.id);
+        const matches = (d && Array.isArray(d.data) ? d.data : []).filter(function (m) {
+          return m && typeof m.id === 'string' && pattern.test(m.id);
         });
-        sonnets.sort(function (a, b) { return createdMs(b) - createdMs(a); });
-        if (sonnets.length) { cachedModel = sonnets[0].id; return cachedModel; }
+        matches.sort(function (a, b) { return createdMs(b) - createdMs(a); });
+        if (matches.length) { cachedModel[tier] = matches[0].id; return cachedModel[tier]; }
       }
     }
   } catch (e) { /* fall through */ }
-  return FALLBACK_MODEL;
+  return tier === 'haiku' ? FALLBACK_MODEL_HAIKU : FALLBACK_MODEL_SONNET;
 }
 
-async function callClaude(key, system, messages, maxTokens, deadline) {
-  const model = await pickModel(key, deadline);
+async function callClaude(key, tier, system, messages, maxTokens, deadline) {
+  const model = await pickModel(tier, key, deadline);
   const remaining = deadline - Date.now();
   if (remaining <= 300) throw new Error('time budget exhausted before model call');
+  const payload = { model: model, max_tokens: maxTokens, system: system, messages: messages };
+  // Explicitly disable thinking on Sonnet only. The newest Sonnet models (5,
+  // 4.6) run adaptive thinking by DEFAULT when the field is omitted, and
+  // max_tokens caps thinking + response text together — this function's
+  // per-mode budgets are deliberately tiny (live=220, followup=180, tag=200)
+  // so the whole budget could be consumed by thinking, truncating the
+  // coaching prose to nothing. Disabled thinking is accepted on every Sonnet.
+  // Haiku 4.5 has no adaptive-thinking-by-default behavior to guard against,
+  // and isn't guaranteed to accept the field, so it's only sent for the
+  // 'sonnet' tier.
+  if (tier === 'sonnet') payload.thinking = { type: 'disabled' };
   const r = await fetchWithTimeout(MESSAGES_URL, {
     method: 'POST',
     headers: {
@@ -120,27 +142,26 @@ async function callClaude(key, system, messages, maxTokens, deadline) {
       'x-api-key': key,
       'anthropic-version': ANTHROPIC_VERSION
     },
-    // Explicitly disable thinking. The newest Sonnet models (5, 4.6) run
-    // adaptive thinking by DEFAULT when the field is omitted, and max_tokens
-    // caps thinking + response text together. This function's per-mode budgets
-    // are deliberately tiny (live=220, followup=180, tag=200) so the whole
-    // budget can be consumed by thinking, truncating the coaching prose to
-    // nothing. The Professor writes short prose over numbers already computed
-    // in code — it has no use for a reasoning pass — so turning thinking off
-    // guarantees every token goes to the response. Safe here because model
-    // discovery only ever selects a Sonnet (disabled thinking is accepted on
-    // every Sonnet; only Fable rejects it, and Fable never matches /sonnet/i).
-    body: JSON.stringify({
-      model: model,
-      max_tokens: maxTokens,
-      system: system,
-      messages: messages,
-      thinking: { type: 'disabled' }
-    })
+    body: JSON.stringify(payload)
   }, remaining);
   if (!r.ok) throw new Error('anthropic upstream ' + r.status);
   const d = await r.json();
   return (d && d.content && d.content[0] && d.content[0].text) || '';
+}
+
+/** Anthropic requires messages to strictly alternate starting with 'user'.
+ *  Chat mode builds its message list from client-supplied history, so this
+ *  merges any accidental same-role repeats and drops a leading non-user
+ *  message rather than letting a malformed history 400 the whole call. */
+function coalesceMessages(messages) {
+  const out = [];
+  messages.forEach(function (m) {
+    const last = out[out.length - 1];
+    if (last && last.role === m.role) { last.content += '\n\n' + m.content; }
+    else out.push({ role: m.role, content: m.content });
+  });
+  while (out.length && out[0].role !== 'user') out.shift();
+  return out;
 }
 
 // ---- the Professor's character -------------------------------------------
@@ -237,6 +258,18 @@ const MODE_BRIEF = {
     'words. Do not repeat their answer back to them. Either affirm the reasoning if it holds up against',
     'their own recorded tendencies, or name the one specific gap in it — then stop talking. This is the',
     'last word before they click; do not ask another question.'
+  ].join(' '),
+  chat: [
+    'MODE: live chat under the chart. This is a genuine back-and-forth conversation with the trader',
+    'while they look at the chart in front of them — not a single canned reply. Read the conversation',
+    'so far and respond to their actual latest message, drawing on the chart context and structure read',
+    'below whenever it is relevant to what they asked. Be creative and exploratory in HOW you explain',
+    'things — different framings, analogies, alternative ways to read the same structure, follow-up',
+    'questions of your own — as long as every concrete number you cite comes verbatim from the context',
+    'given, and you never predict where price goes next or tell them what to buy or sell. Keep replies',
+    'conversational: usually 2 to 5 short sentences, longer only if the question genuinely needs a fuller',
+    'walkthrough. If no chart context was provided, say so plainly and answer from general trading',
+    'education instead of guessing at what is on their screen.'
   ].join(' ')
 };
 
@@ -247,7 +280,8 @@ const FALLBACK = {
   playbook: 'Coaching is offline right now. Your confirmed rules and leaks are listed on the Bench tab and are already computed — those are the playbook until this reconnects.',
   ask: 'Coaching is offline right now. Your Bench and Risk lab numbers are still computed and current.',
   weekly: 'Coaching is offline right now. Your Profile & Stats page still has this week\u2019s real numbers.',
-  followup: 'Coaching is offline right now — trust your own read on it.'
+  followup: 'Coaching is offline right now — trust your own read on it.',
+  chat: 'Chat is offline right now — the numbers and structure on your chart are still exact.'
 };
 
 const SIGN_IN_MSG = 'Sign in to use the Professor — free accounts get 15 AI coaching calls a month, no card required.';
@@ -311,7 +345,7 @@ exports.handler = async function (event) {
   let body = {};
   try { body = JSON.parse(event.body || '{}'); } catch (e) { body = {}; }
 
-  const mode = ['live', 'debrief', 'playbook', 'ask', 'tag', 'weekly', 'followup'].indexOf(String(body.mode || '')) !== -1
+  const mode = ['live', 'debrief', 'playbook', 'ask', 'tag', 'weekly', 'followup', 'chat'].indexOf(String(body.mode || '')) !== -1
     ? String(body.mode) : 'ask';
 
   // Coaching requires an account — usage has to be tied to a stable identity
@@ -358,12 +392,19 @@ exports.handler = async function (event) {
   const vocab     = clean(body.vocab, 4000);                 // the closed tag list, sent by the client
   const priorQuestion = clean(body.priorQuestion, 500);       // the Professor's own prior live-mode line
   const answer    = clean(body.answer, 500);                  // the trader's reply to it
+  const message   = clean(body.message, 1500);                // chat mode: the trader's latest turn
+  const history = (Array.isArray(body.history) ? body.history.slice(-10) : []).map(function (m) {
+    const role = m && m.role === 'assistant' ? 'assistant' : 'user';
+    const text = clean(m && m.text, 800);
+    return text ? { role: role, text: text } : null;
+  }).filter(Boolean);
 
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return ok({ ok: false, degraded: true, mode: mode, text: FALLBACK[mode] });
 
   const system = [CHARACTER, '', MODE_BRIEF[mode], '', HARD_RULES].join('\n');
 
+  let messages = null;
   const parts = [];
   if (mode === 'tag') {
     if (!note || !vocab) {
@@ -378,20 +419,42 @@ exports.handler = async function (event) {
     if (profileText) parts.push('TRADER PROFILE — computed from their full recorded history:\n' + profileText);
     if (priorQuestion) parts.push('WHAT YOU JUST ASKED THEM:\n' + priorQuestion);
     parts.push('THEIR ANSWER:\n' + answer);
+  } else if (mode === 'chat') {
+    if (!message) {
+      return ok({ ok: false, degraded: true, mode: mode, text: '' });
+    }
+    const ctxParts = [];
+    if (profileText) ctxParts.push('TRADER PROFILE — computed from their full recorded history:\n' + profileText);
+    if (context) ctxParts.push('CURRENT CHART CONTEXT — computed live from the revealed bars and structure read:\n' + context);
+    messages = [];
+    if (ctxParts.length) {
+      messages.push({
+        role: 'user',
+        content: ctxParts.join('\n\n') +
+          '\n\nThis is read-only computed data, not a message from the trader. Acknowledge it briefly, then wait for their actual question.'
+      });
+      messages.push({ role: 'assistant', content: 'Got it — I can see what’s on the chart. What do you want to dig into?' });
+    }
+    history.forEach(function (m) { messages.push({ role: m.role, content: m.text }); });
+    messages.push({ role: 'user', content: message });
+    messages = coalesceMessages(messages);
   } else {
     if (profileText) parts.push('TRADER PROFILE — computed from their full recorded history:\n' + profileText);
     if (context) parts.push('CURRENT CONTEXT — computed from the live session:\n' + context);
     if (mode === 'ask' && question) parts.push('THE TRADER ASKS:\n' + question);
   }
-  if (!parts.length) {
+  if (!messages && !parts.length) {
     return ok({ ok: false, degraded: true, mode: mode,
       text: 'Log or import a few trades first — coaching runs on your own recorded evidence, not on generic advice.' });
+  }
+  if (!messages) {
+    messages = [{ role: 'user', content: parts.join('\n\n') + '\n\nRespond in your voice, following the mode brief exactly.' }];
   }
 
   try {
     const raw = await callClaude(
-      key, system,
-      [{ role: 'user', content: parts.join('\n\n') + '\n\nRespond in your voice, following the mode brief exactly.' }],
+      key, MODEL_TIER[mode] || 'sonnet', system,
+      messages,
       TOKENS[mode], deadline
     );
     const text = clean(raw, 6000);

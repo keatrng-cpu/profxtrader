@@ -6,6 +6,10 @@
 <meta name="robots" content="noindex">
 <title>ProFX Trading</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<!-- Replay chart engine — real pan/zoom/crosshair candlestick charting.
+     Pinned version, self-hosted-equivalent CDN (jsdelivr mirrors npm, same
+     trust boundary as the Supabase include above). MIT licensed. -->
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 <style>
   /* ============================================================
      ProFX Trading — Helix design system (indigo/cyan on navy),
@@ -398,6 +402,28 @@
   <div class="strip" id="b-strip"></div>
   <div class="note" id="b-ingest"></div>
 
+  <h2>Equity curve</h2>
+  <div class="card"><div id="b-curve"></div></div>
+  <div class="note">Same calculation as the Risk lab — its account equity and risk-per-trade
+    assumptions, replayed against every trade in your ledger in order.</div>
+
+  <h2>R-multiple distribution</h2>
+  <div class="card"><div id="b-rhist"></div></div>
+  <div class="note">Where your outcomes actually land in R, in half-R buckets. A distribution bunched
+    at -1R with a thin right tail is a management problem, not an entry problem.</div>
+
+  <h2>Daily P&amp;L calendar</h2>
+  <div class="card"><div id="b-calendar"></div></div>
+
+  <h2>Win rate by day of week</h2>
+  <div class="card" id="b-dow"></div>
+
+  <h2>Win rate by time of day (UTC)</h2>
+  <div class="card" id="b-tod"></div>
+  <div class="note">Grouped by the parsed hour of your Open Date field. Trades journaled with a
+    date but no time all fall into the 00:00–04:00 UTC block — this view earns its keep once your
+    entries carry a real timestamp, which imported broker exports and Replay session trades already do.</div>
+
   <h2>Walk-forward</h2>
   <div class="strip" id="b-wf"></div>
   <div class="note">The held-out block was never used to find these conditions. If its expectancy
@@ -530,8 +556,15 @@
 
   <h2>Chart <span class="note" id="rp-ident"></span></h2>
   <div class="card" style="padding:8px">
-    <canvas id="rp-canvas" height="380" style="width:100%;height:380px;display:block"></canvas>
-    <canvas id="rp-canvas-htf" height="170" style="width:100%;height:170px;display:block;margin-top:6px"></canvas>
+    <div style="position:relative">
+      <div id="rp-canvas" style="width:100%;height:380px"></div>
+      <div id="rp-canvas-empty" class="note" style="position:absolute;left:14px;top:10px;margin:0;pointer-events:none">Load bars and start a session.</div>
+      <div id="rp-canvas-stamp-l" class="note" style="position:absolute;left:8px;bottom:2px;margin:0;pointer-events:none;font-size:11px"></div>
+      <div id="rp-canvas-stamp-r" class="note" style="position:absolute;right:8px;bottom:2px;margin:0;pointer-events:none;font-size:11px"></div>
+    </div>
+    <div style="position:relative;margin-top:6px">
+      <div id="rp-canvas-htf" style="width:100%;height:170px"></div>
+    </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
       <button class="btn tiny" id="rp-play" disabled>Play</button>
       <button class="btn ghost tiny" id="rp-step" disabled>Step ▸</button>
@@ -556,6 +589,20 @@
       trade, since skipping past an open position would skip the management decisions this tool exists
       to capture. Session windows use a fixed UTC offset, not DST-aware, so treat them as approximate
       by up to an hour around clock changes.</div>
+  </div>
+
+  <h2>Chat with the Professor <span class="note" id="rp-chatState"></span></h2>
+  <div class="card">
+    <div class="note" style="margin:0 0 10px">Ask about what's actually on the chart — the FVG it just
+      flagged, whether to wait for a retest, how to think about the position you're in, or anything
+      else on your mind. The Professor reads the same revealed bars and computed structure you see; it
+      never predicts price and never tells you what to trade.</div>
+    <div id="rp-chatLog" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px 4px"></div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:flex-end">
+      <textarea id="rp-chatInput" style="flex:1;min-height:44px;resize:vertical" placeholder="What does that FVG mean for my stop? Should I wait for a retest? Explain the sweep you flagged..."></textarea>
+      <button class="btn tiny" id="rp-chatSend" style="flex:none">Send</button>
+    </div>
+    <div class="note" id="rp-chatMsg" style="margin-top:6px"></div>
   </div>
 
   <h2>Professor <span class="note" id="rp-profState"></span></h2>
@@ -3592,7 +3639,159 @@ function renderBench() {
       '<div class="pt" style="left:' + X(s.expectancyR) + '%;background:' + c + '"></div></div>' +
       '<div class="meta">n=' + s.n + ' · ' + R(s.expectancyR) + ' · ' + st + '</div></div>';
   }).join('') || '<div class="mut">No condition has reached the minimum sample size to be tested.</div>';
+
+  renderPerformanceDashboards();
 }
+
+/* ---------------------------------------------------------------- */
+/* PERFORMANCE DASHBOARDS — TradeZella-style views, computed only    */
+/* from tradesN (already-normalized) and the canonical stats engine. */
+/* Nothing here recomputes an R-multiple or a win/loss classification;*/
+/* every number is either read straight off a trade or produced by   */
+/* E.computeStats / L.equityCurve, the same functions the rest of    */
+/* the app trusts.                                                   */
+/* ---------------------------------------------------------------- */
+
+var DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+var HOUR_BLOCKS = [[0, 4], [4, 8], [8, 12], [12, 16], [16, 20], [20, 24]];
+var HOUR_LABELS = HOUR_BLOCKS.map(function (b) {
+  return (b[0] < 10 ? '0' : '') + b[0] + ':00–' + (b[1] < 10 ? '0' : '') + b[1] + ':00';
+});
+
+function rHistogramBins(trades) {
+  if (!trades.length) return [];
+  var rs = trades.map(function (t) { return t.rMultiple; });
+  var width = 0.5;
+  var lo = Math.min(-1, Math.floor(Math.min.apply(null, rs) / width) * width);
+  var hi = Math.max(1, Math.ceil(Math.max.apply(null, rs) / width) * width);
+  var n = Math.max(1, Math.round((hi - lo) / width));
+  var bins = [];
+  for (var i = 0; i < n; i++) bins.push({ from: lo + i * width, to: lo + (i + 1) * width, count: 0 });
+  rs.forEach(function (r) {
+    var idx = Math.min(n - 1, Math.max(0, Math.floor((r - lo) / width)));
+    bins[idx].count++;
+  });
+  return bins;
+}
+
+function renderRHistogram(trades) {
+  var bins = rHistogramBins(trades);
+  if (!bins.length) return '<div class="mut">No trades yet.</div>';
+  var maxCount = Math.max.apply(null, bins.map(function (b) { return b.count; }).concat([1]));
+  return '<div class="bars">' + bins.map(function (b) {
+    var h = Math.max(b.count ? 3 : 0, Math.round((b.count / maxCount) * 100));
+    var color = b.to <= 0 ? 'var(--neg)' : b.from >= 0 ? 'var(--pos)' : 'var(--band)';
+    return '<div class="bar" style="height:' + h + '%;background:' + color +
+      '" title="' + b.from.toFixed(1) + 'R to ' + b.to.toFixed(1) + 'R: ' + b.count + ' trade' +
+      (b.count === 1 ? '' : 's') + '"></div>';
+  }).join('') + '</div><div style="display:flex;justify-content:space-between;margin-top:6px;' +
+    'font-size:10px;color:var(--muted)"><span>' + bins[0].from.toFixed(1) + 'R</span>' +
+    '<span>0R</span><span>' + bins[bins.length - 1].to.toFixed(1) + 'R</span></div>';
+}
+
+/** Map of 'YYYY-MM-DD' (UTC) -> {r: summed R, dollar: summed $ or null, n: count}. Undated
+ *  trades (Date.parse failed on the journaled Open Date) are excluded — they can't be placed
+ *  on a calendar, and silently bucketing them under "today" would misattribute them. */
+function dailyPnlMap(trades) {
+  var map = {};
+  trades.forEach(function (t) {
+    if (!t.ts) return;
+    var day = new Date(t.ts).toISOString().slice(0, 10);
+    var e = map[day] || (map[day] = { r: 0, dollar: 0, hasDollar: false, n: 0 });
+    e.r += t.rMultiple; e.n++;
+    if (Number.isFinite(t.netPnl)) { e.dollar += t.netPnl; e.hasDollar = true; }
+  });
+  return map;
+}
+
+function renderCalendarHeatmap(trades) {
+  var dated = trades.filter(function (t) { return t.ts; });
+  if (!dated.length) return '<div class="mut">No dated trades yet.</div>';
+  var map = dailyPnlMap(dated);
+  var end = new Date(dated[dated.length - 1].ts);
+  end.setUTCHours(0, 0, 0, 0);
+  end.setUTCDate(end.getUTCDate() + (6 - end.getUTCDay()));   // align to end-of-week (Saturday)
+  var WEEKS = 13;
+  var start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - WEEKS * 7 + 1);
+
+  var maxAbsR = 0;
+  Object.keys(map).forEach(function (d) { maxAbsR = Math.max(maxAbsR, Math.abs(map[d].r)); });
+  maxAbsR = maxAbsR || 1;
+
+  var cols = [];
+  for (var w = 0; w < WEEKS; w++) {
+    var col = [];
+    for (var d = 0; d < 7; d++) {
+      var day = new Date(start); day.setUTCDate(day.getUTCDate() + w * 7 + d);
+      col.push({ key: day.toISOString().slice(0, 10), e: map[day.toISOString().slice(0, 10)] });
+    }
+    cols.push(col);
+  }
+
+  var grid = cols.map(function (col) {
+    return '<div style="display:flex;flex-direction:column;gap:3px">' + col.map(function (c) {
+      if (!c.e) return '<div style="width:13px;height:13px;border-radius:3px;background:var(--surface2)" ' +
+        'title="' + c.key + ': no trades"></div>';
+      var intensity = Math.min(1, Math.abs(c.e.r) / maxAbsR);
+      var bg = c.e.r > 0 ? 'rgba(34,197,94,' + (0.18 + intensity * 0.72).toFixed(2) + ')'
+             : c.e.r < 0 ? 'rgba(239,68,68,' + (0.18 + intensity * 0.72).toFixed(2) + ')'
+             : 'var(--surface2)';
+      var label = c.key + ': ' + c.e.n + ' trade' + (c.e.n === 1 ? '' : 's') + ', ' + R(E.round(c.e.r, 2)) +
+        (c.e.hasDollar ? ' (' + usd(E.round(c.e.dollar, 2)) + ')' : '');
+      return '<div style="width:13px;height:13px;border-radius:3px;background:' + bg + '" title="' + esc(label) + '"></div>';
+    }).join('') + '</div>';
+  }).join('');
+
+  return '<div style="display:flex;gap:3px;overflow-x:auto;padding-bottom:4px">' + grid + '</div>' +
+    '<div class="note" style="margin-top:8px">Each cell is one UTC calendar day — green is net positive R, ' +
+    'red is net negative R, shade tracks magnitude. Last ' + WEEKS + ' weeks ending ' +
+    end.toISOString().slice(0, 10) + '.</div>';
+}
+
+/** Buckets trades by keyFn(trade) -> integer index into labels, then runs each bucket through
+ *  the SAME E.computeStats used for every other slice in this app — no separate win-rate or
+ *  expectancy math for this view. */
+function renderBucketTable(trades, cfg, keyFn, labels) {
+  var buckets = labels.map(function () { return []; });
+  var any = false;
+  trades.forEach(function (t) {
+    if (!t.ts) return;
+    var idx = keyFn(t);
+    if (idx >= 0 && idx < buckets.length) { buckets[idx].push(t); any = true; }
+  });
+  if (!any) return '<div class="mut">No dated trades yet.</div>';
+  return '<div class="scroll"><table><thead><tr><th></th><th class="num">n</th>' +
+    '<th class="num">Win rate</th><th class="num">Expectancy</th><th class="num">Total</th></tr></thead><tbody>' +
+    labels.map(function (label, i) {
+      var st = E.computeStats(buckets[i], cfg);
+      return '<tr><td>' + esc(label) + '</td><td class="num">' + st.n + '</td><td class="num">' + pct(st.winRate) +
+        '</td><td class="num ' + sign(st.expectancyR) + '">' + R(st.expectancyR) + '</td><td class="num ' +
+        sign(st.totalR) + '">' + R(st.totalR) + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+}
+
+function renderPerformanceDashboards() {
+  var opts = riskOpts();
+  var ec = tradesN.length ? L.equityCurve(tradesN, { startEquity: opts.equity, riskPct: opts.riskPct }) : null;
+  $('b-curve').innerHTML = ec && ec.points.length
+    ? svgLine(ec.points.map(function (p, i) { return { y: p.equity, i: i }; }), 700, 200,
+        { baseline: opts.equity, fmt: usd, label: 'equity curve' }) +
+      '<div class="note">Final ' + usd(ec.finalEquity) + ' · max drawdown ' + pct(ec.maxDrawdown) +
+      ' · longest time under water ' + ec.longestDrawdownTrades + ' trades.</div>'
+    : '<div class="mut">No trades yet.</div>';
+
+  $('b-rhist').innerHTML = renderRHistogram(tradesN);
+  $('b-calendar').innerHTML = renderCalendarHeatmap(tradesN);
+  $('b-dow').innerHTML = renderBucketTable(tradesN, report.config,
+    function (t) { return new Date(t.ts).getUTCDay(); }, DOW_NAMES);
+  $('b-tod').innerHTML = renderBucketTable(tradesN, report.config, function (t) {
+    var h = new Date(t.ts).getUTCHours();
+    for (var i = 0; i < HOUR_BLOCKS.length; i++) if (h < HOUR_BLOCKS[i][1]) return i;
+    return HOUR_BLOCKS.length - 1;
+  }, HOUR_LABELS);
+}
+
 $('b-json').addEventListener('click', function () {
   if (report) download('edge-report.json', JSON.stringify(report, null, 2), 'application/json'); });
 $('b-txt').addEventListener('click', function () {
@@ -4066,6 +4265,8 @@ $('rp-new').addEventListener('click', function () {
     return;
   }
   sessionLedger = [];
+  rpChatHistory = [];   // new session, new chart — stale chat context would be misleading
+  if (typeof rpChatRender === 'function') rpChatRender();
   $('rp-msg').innerHTML = '<span class="pos">Session open. Seed ' + sess.cfg.seed +
     ' — note it if you want to replay this exact slice.</span>';
   ['rp-play', 'rp-step', 'rp-end', 'rp-goto-ny', 'rp-goto-ln', 'rp-goto-nd'].forEach(function (id) { $(id).disabled = false; });
@@ -4258,82 +4459,166 @@ function rpSizePreview() {
  *                             (LTF only — orders are placed on the execution
  *                             timeframe; the HTF pane is context, not a ticket)
  */
-function rpDrawPane(canvasId, tfMin, paneH, opts) {
+/* ---------------------------------------------------------------- */
+/* Replay chart engine — TradingView Lightweight Charts               */
+/* ---------------------------------------------------------------- */
+/* Real pan/zoom/crosshair candlestick charting, replacing a hand-rolled
+ * Canvas 2D "clear and redraw the last N bars" renderer that had no
+ * viewport of its own — the visible window was always just "however many
+ * bars fit the pixel width," which is why it never had pan or zoom.
+ *
+ * THE AI CONNECTION — READ THIS BEFORE TOUCHING rpMarkup:
+ * Structure.analyze() below is unchanged: FVGs, BOS/CHoCH breaks, and
+ * liquidity sweeps are still 100% arithmetic over revealed bars, computed
+ * exactly as before. Only the DRAWING of that markup moved to the chart
+ * library's primitive/marker APIs. `rpMarkup = mk` is still set from that
+ * same analyze() call, on the LTF pane, every redraw — that assignment is
+ * what feeds the Professor a live read of the backtest's structure, and it
+ * is preserved verbatim. The AI never computes a number; it only narrates
+ * what this function already computed, same as before.
+ */
+var RPCharts = (function () {
+  var panes = {}; // paneKey -> { chart, series, fvg, priceLines: [] }
+
+  /** Custom series primitive: shaded price-range boxes for open FVGs.
+   *  Lightweight Charts calls updateAllViews() before every repaint (pan,
+   *  zoom, resize) — recomputing pixel coordinates there, not at data-set
+   *  time, is what keeps the boxes glued to the right bars while the user
+   *  drags the chart around. */
+  function fvgPrimitive() {
+    var raw = [], computed = [], chartRef = null, seriesRef = null;
+    var pv = {
+      update: function () {
+        computed = [];
+        if (!chartRef || !seriesRef) return;
+        var ts = chartRef.timeScale();
+        raw.forEach(function (b) {
+          computed.push({
+            x1: ts.timeToCoordinate(b.t1), x2: ts.timeToCoordinate(b.t2),
+            y1: seriesRef.priceToCoordinate(b.p1), y2: seriesRef.priceToCoordinate(b.p2),
+            color: b.color
+          });
+        });
+      },
+      renderer: function () {
+        var data = computed;
+        return {
+          draw: function (target) {
+            target.useBitmapCoordinateSpace(function (scope) {
+              var ctx = scope.context;
+              data.forEach(function (d) {
+                if (d.x1 == null || d.x2 == null || d.y1 == null || d.y2 == null) return;
+                var x = Math.min(d.x1, d.x2) * scope.horizontalPixelRatio;
+                var width = Math.max(1, Math.abs(d.x2 - d.x1) * scope.horizontalPixelRatio);
+                var y = Math.min(d.y1, d.y2) * scope.verticalPixelRatio;
+                var height = Math.max(1, Math.abs(d.y2 - d.y1) * scope.verticalPixelRatio);
+                ctx.fillStyle = d.color;
+                ctx.fillRect(x, y, width, height);
+              });
+            });
+          }
+        };
+      }
+    };
+    return {
+      updateAllViews: function () { pv.update(); },
+      paneViews: function () { return [pv]; },
+      attached: function (params) { chartRef = params.chart; seriesRef = params.series; },
+      setBoxes: function (boxes) { raw = boxes || []; }
+    };
+  }
+
+  function ensure(paneKey, containerId, h) {
+    if (panes[paneKey]) return panes[paneKey];
+    var el = $(containerId); if (!el) return null;
+    var chart = LightweightCharts.createChart(el, {
+      autoSize: true,
+      layout: { background: { color: 'transparent' }, textColor: '#8b96b3',
+                fontFamily: 'ui-monospace,SF Mono,Menlo,Consolas,monospace', fontSize: 10 },
+      grid: { vertLines: { color: 'rgba(57,67,95,.35)' }, horzLines: { color: 'rgba(57,67,95,.35)' } },
+      rightPriceScale: { borderColor: '#232b42' },
+      timeScale: { borderColor: '#232b42', timeVisible: true, secondsVisible: false },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    });
+    var series = chart.addCandlestickSeries({
+      upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
+      wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+    });
+    var fvg = fvgPrimitive();
+    series.attachPrimitive(fvg);
+    panes[paneKey] = { chart: chart, series: series, fvg: fvg, priceLines: [] };
+    return panes[paneKey];
+  }
+
+  function clearLines(pane) {
+    pane.priceLines.forEach(function (l) { try { pane.series.removePriceLine(l); } catch (e) {} });
+    pane.priceLines = [];
+  }
+  function addLine(pane, price, color, title, dashed) {
+    if (!Number.isFinite(price)) return;
+    pane.priceLines.push(pane.series.createPriceLine({
+      price: price, color: color, lineWidth: 1,
+      lineStyle: dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+      axisLabelVisible: true, title: title || ''
+    }));
+  }
+  /** Wipe a pane back to empty without creating one that doesn't exist yet. */
+  function clear(paneKey) {
+    var pane = panes[paneKey]; if (!pane) return;
+    pane.series.setData([]); pane.series.setMarkers([]); pane.fvg.setBoxes([]);
+    clearLines(pane);
+  }
+
+  return { ensure: ensure, clearLines: clearLines, addLine: addLine, clear: clear };
+})();
+
+function rpDrawPane(containerId, tfMin, paneH, opts) {
   opts = opts || {};
-  var cv = $(canvasId); if (!cv) return;
-  var ctx = cv.getContext('2d');
-  var dpr = window.devicePixelRatio || 1;
-  var w = cv.clientWidth, h = paneH;
-  if (cv.width !== w * dpr || cv.height !== h * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
+  var paneKey = containerId === 'rp-canvas' ? 'ltf' : 'htf';
+  var isLtf = paneKey === 'ltf';
+  var emptyEl = isLtf ? $('rp-canvas-empty') : null;
+  var stampL = isLtf ? $('rp-canvas-stamp-l') : null;
+  var stampR = isLtf ? $('rp-canvas-stamp-r') : null;
+
   if (!sess) {
-    if (opts.showOrderLines) {
-      ctx.fillStyle = '#8b96b3'; ctx.font = '12px ui-monospace,monospace';
-      ctx.fillText('Load bars and start a session.', 14, 24);
-    }
+    if (emptyEl) emptyEl.style.display = 'block';
+    if (stampL) stampL.textContent = '';
+    if (stampR) stampR.textContent = '';
+    RPCharts.clear(paneKey);
     return;
   }
-  if (!tfMin) { return; } // HTF pane turned off
+  if (emptyEl) emptyEl.style.display = 'none';
+  if (!tfMin) return; // HTF pane turned off — caller hides the container
+
+  var pane = RPCharts.ensure(paneKey, containerId, paneH);
+  if (!pane) return;
 
   var series = RP.chart(sess, tfMin);
-  var VIS = Math.max(30, Math.floor((w - 70) / 7));
-  var view = series.slice(-VIS);
+  // Lightweight Charts owns its own viewport now — hand it real history to
+  // scroll/zoom through instead of only "however many bars fit the width."
+  var view = series.slice(-500);
   if (!view.length) return;
 
-  var lo = Infinity, hi = -Infinity;
-  view.forEach(function (b) { lo = Math.min(lo, b.l); hi = Math.max(hi, b.h); });
+  pane.series.setData(view.map(function (b) {
+    return { time: Math.floor(b.t / 1000), open: b.o, high: b.h, low: b.l, close: b.c };
+  }));
+
+  RPCharts.clearLines(pane);
   var p = sess.position;
-  if (opts.showOrderLines && p) { [p.entry, p.stop, p.target].forEach(function (v) {
-    if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }); }
-  var pend = opts.showOrderLines ? [numv($('rp-stop').value), numv($('rp-tgt').value)] : [null, null];
-  pend.forEach(function (v) { if (v !== null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } });
-  var pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
-
-  var L = 8, Rt = w - 62, T = 10, B = h - 22;
-  var X = function (i) { return L + (i / Math.max(1, view.length - 1)) * (Rt - L); };
-  var Y = function (v) { return B - ((v - lo) / (hi - lo)) * (B - T); };
-  var cw = Math.max(1.5, ((Rt - L) / view.length) * 0.62);
-
-  ctx.font = '9px ui-monospace,monospace'; ctx.textBaseline = 'middle';
-  ctx.strokeStyle = 'rgba(57,67,95,.7)'; ctx.fillStyle = '#8b96b3'; ctx.lineWidth = 1;
-  for (var g = 0; g <= 4; g++) {
-    var v = lo + (hi - lo) * (g / 4), y = Math.round(Y(v)) + 0.5;
-    ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(Rt, y); ctx.stroke();
-    ctx.fillText(v.toFixed(2), Rt + 6, y);
-  }
-
-  view.forEach(function (b, i) {
-    var x = X(i), up = b.c >= b.o;
-    ctx.strokeStyle = up ? '#22c55e' : '#ef4444';
-    ctx.fillStyle = up ? '#22c55e' : '#ef4444';
-    ctx.beginPath(); ctx.moveTo(x, Y(b.h)); ctx.lineTo(x, Y(b.l)); ctx.stroke();
-    var yo = Y(b.o), yc = Y(b.c);
-    ctx.globalAlpha = b.closed ? 1 : 0.45;
-    ctx.fillRect(x - cw / 2, Math.min(yo, yc), cw, Math.max(1, Math.abs(yc - yo)));
-    ctx.globalAlpha = 1;
-  });
-
-  function level(v, color, label, dash) {
-    if (!Number.isFinite(v) || v === null) return;
-    var y = Math.round(Y(v)) + 0.5;
-    ctx.save(); ctx.setLineDash(dash || []); ctx.strokeStyle = color; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(Rt, y); ctx.stroke(); ctx.restore();
-    ctx.fillStyle = color; ctx.fillText(label, L + 3, y - 7);
-  }
   if (opts.showOrderLines) {
     if (p) {
-      level(p.entry, '#e9edf7', 'entry ' + p.entry, []);
-      level(p.stop, '#ef4444', 'stop ' + p.stop, [4, 3]);
-      level(p.target, '#22c55e', 'target ' + p.target, [4, 3]);
+      RPCharts.addLine(pane, p.entry, '#e9edf7', 'entry ' + p.entry, false);
+      RPCharts.addLine(pane, p.stop, '#ef4444', 'stop ' + p.stop, true);
+      RPCharts.addLine(pane, p.target, '#22c55e', 'target ' + p.target, true);
     } else {
-      level(pend[0], '#ef4444', 'stop', [2, 4]);
-      level(pend[1], '#22c55e', 'target', [2, 4]);
+      RPCharts.addLine(pane, numv($('rp-stop').value), '#ef4444', 'stop', true);
+      RPCharts.addLine(pane, numv($('rp-tgt').value), '#22c55e', 'target', true);
     }
   }
 
   /* --- structure markup: computed in code, never by a model --- */
   var markupOn = window.Structure && $('rp-markup') && $('rp-markup').checked;
+  var markers = [];
   if (markupOn) {
     try {
       // The chart series includes the currently-forming candle at the tip (its
@@ -4346,65 +4631,70 @@ function rpDrawPane(canvasId, tfMin, paneH, opts) {
       var closedView = view.filter(function (b) { return b.closed !== false; });
       var mk = Structure.analyze(closedView.length >= 12 ? closedView : view);
       if (mk.available) {
-        if (opts.showOrderLines) rpMarkup = mk;   // LTF markup feeds the Professor
-        // unmitigated fair value gaps — shaded bands
-        mk.fvgs.slice(-8).forEach(function (g) {
-          var yA = Y(Math.max(g.from, g.to)), yB = Y(Math.min(g.from, g.to));
-          ctx.fillStyle = g.dir === 'bull' ? 'rgba(34,197,94,.10)' : 'rgba(239,68,68,.10)';
-          ctx.fillRect(L, yA, Rt - L, Math.max(1, yB - yA));
-        });
+        if (opts.showOrderLines) rpMarkup = mk;   // LTF markup feeds the Professor — unchanged wiring
+
+        // unmitigated fair value gaps — shaded bands from where the gap opened
+        // forward to the current bar (every event object carries its own
+        // absolute `.t`, so this is correct even though Structure.analyze()
+        // ran against closedView, a different index space than `view`).
+        var lastT = Math.floor(view[view.length - 1].t / 1000);
+        pane.fvg.setBoxes(mk.fvgs.slice(-8).map(function (g) {
+          return {
+            t1: Math.floor(g.t / 1000), t2: lastT, p1: g.from, p2: g.to,
+            color: g.dir === 'bull' ? 'rgba(34,197,94,.16)' : 'rgba(239,68,68,.16)'
+          };
+        }));
+
         // resting liquidity — dotted lines at unswept extremes
-        ctx.save(); ctx.setLineDash([1, 4]); ctx.lineWidth = 1;
-        [[mk.restingHigh, '#22d3ee'], [mk.restingLow, '#22d3ee']].forEach(function (pair) {
-          if (!pair[0]) return;
-          var y = Y(pair[0].price);
-          ctx.strokeStyle = pair[1];
-          ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(Rt, y); ctx.stroke();
-          ctx.fillStyle = pair[1]; ctx.fillText('liquidity ' + pair[0].price.toFixed(2), L + 3, y - 6);
-        });
-        ctx.restore();
-        // structure breaks — small markers on the bar that broke
-        var n = view.length;
+        if (mk.restingHigh) RPCharts.addLine(pane, mk.restingHigh.price, '#22d3ee', 'liquidity ' + mk.restingHigh.price.toFixed(2), true);
+        if (mk.restingLow) RPCharts.addLine(pane, mk.restingLow.price, '#22d3ee', 'liquidity ' + mk.restingLow.price.toFixed(2), true);
+
+        // structure breaks — small circle markers on the bar that broke
         mk.breaks.slice(-6).forEach(function (b) {
-          var x = L + ((b.i + 0.5) / n) * (Rt - L);
-          var y = Y(b.price);
-          ctx.fillStyle = b.kind === 'CHoCH' ? '#eab308' : '#6366f1';
-          ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
-          ctx.fillText(b.kind, x + 4, y - 5);
+          markers.push({
+            time: Math.floor(b.t / 1000), position: 'aboveBar',
+            color: b.kind === 'CHoCH' ? '#eab308' : '#6366f1',
+            shape: 'circle', text: b.kind
+          });
         });
-        // sweeps — a caret at the wick that took the level
-        ctx.fillStyle = '#b45cff';
+        // sweeps — an arrow at the wick that took the level
         mk.sweeps.slice(-6).forEach(function (s) {
-          var x = L + ((s.i + 0.5) / n) * (Rt - L), y = Y(s.price);
-          ctx.beginPath();
-          ctx.moveTo(x, y + (s.side === 'high' ? -6 : 6));
-          ctx.lineTo(x - 3.5, y); ctx.lineTo(x + 3.5, y);
-          ctx.closePath(); ctx.fill();
+          markers.push({
+            time: Math.floor(s.t / 1000),
+            position: s.side === 'high' ? 'aboveBar' : 'belowBar',
+            color: '#b45cff', shape: s.side === 'high' ? 'arrowDown' : 'arrowUp', text: 'sweep'
+          });
         });
+      } else {
+        pane.fvg.setBoxes([]);
       }
     } catch (e) { /* markup is a visual aid; never let it break the chart */ }
+  } else {
+    pane.fvg.setBoxes([]);
   }
+  // Lightweight Charts requires markers sorted ascending by time.
+  markers.sort(function (a, b) { return a.time - b.time; });
+  pane.series.setMarkers(markers);
 
-  ctx.fillStyle = '#8b96b3';
-  var t0 = new Date(view[0].t), t1 = new Date(view[view.length - 1].t);
-  var stamp = sess.closed || !sess.cfg.blind
-    ? t0.toISOString().slice(5, 16).replace('T', ' ') + '  →  ' + t1.toISOString().slice(5, 16).replace('T', ' ')
-    : 'sealed — symbol and dates revealed when the session closes';
-  ctx.fillText(stamp, L, h - 8);
-  ctx.textAlign = 'right';
-  ctx.fillText(tfMin + 'm · last ' + RP.lastBar(sess).c.toFixed(2), Rt, h - 8);
-  ctx.textAlign = 'left';
+  if (stampL) {
+    var t0 = new Date(view[0].t);
+    stampL.textContent = sess.closed || !sess.cfg.blind
+      ? t0.toISOString().slice(5, 16).replace('T', ' ')
+      : 'sealed — symbol and dates revealed when the session closes';
+  }
+  if (stampR) stampR.textContent = tfMin + 'm · last ' + RP.lastBar(sess).c.toFixed(2);
 }
 
 function rpDraw() {
   rpDrawPane('rp-canvas', sess ? sess.cfg.chartTfMin : 5, 380, { showOrderLines: true });
   var htfSel = $('rp-htf'), htfTf = htfSel ? parseInt(htfSel.value, 10) : 0;
-  var htfCv = $('rp-canvas-htf');
-  if (htfCv) {
+  var htfEl = $('rp-canvas-htf');
+  if (htfEl) {
     if (!sess || !htfTf) {
-      htfCv.style.display = 'none';
+      htfEl.parentElement.style.display = 'none';
+      RPCharts.clear('htf');
     } else {
-      htfCv.style.display = 'block';
+      htfEl.parentElement.style.display = 'block';
       rpDrawPane('rp-canvas-htf', htfTf, 170, { showOrderLines: false });
     }
   }
@@ -4689,13 +4979,11 @@ function renderCoachInto(el, text, okFlag, reason) {
 
 var rpLastLiveQuestion = null;   // the Professor's own prior live-mode line, for the follow-up turn
 
-function rpCoach(mode) {
-  var box = $('rp-coach');
-  if (!box) return;
-  box.innerHTML = '<span class="mut">Thinking…</span>';
-  $('rp-followupWrap').style.display = 'none';
-  $('rp-followupInput').value = '';
-  $('rp-followupResponse').textContent = '';
+/* Same deterministic read every coaching call uses: revealed bars + the
+   code-computed structure markup (FVGs/breaks/sweeps), never raw price the
+   model didn't already earn access to. Shared by rpCoach and the chat panel
+   so "the AI is connected to the chart" means the same context both places. */
+function rpChartContext() {
   var ctx = '';
   try {
     ctx = Profile.chartContext(sess, RP, sess && !sess.position ? rpScoreChecklist() : null);
@@ -4704,7 +4992,17 @@ function rpCoach(mode) {
     if (window.Structure && sess) { mk = Structure.analyze(RP.chart(sess, sess.cfg.chartTfMin)); }
     if (mk && mk.available) ctx += '\n\n' + mk.text;
   } catch (e) { /* context is best-effort */ }
-  coachCall(mode, { context: ctx }, function (text, okFlag, reason) {
+  return ctx;
+}
+
+function rpCoach(mode) {
+  var box = $('rp-coach');
+  if (!box) return;
+  box.innerHTML = '<span class="mut">Thinking…</span>';
+  $('rp-followupWrap').style.display = 'none';
+  $('rp-followupInput').value = '';
+  $('rp-followupResponse').textContent = '';
+  coachCall(mode, { context: rpChartContext() }, function (text, okFlag, reason) {
     renderCoachInto(box, text, okFlag, reason);
     // Only a genuinely successful LIVE response gets a follow-up turn — not
     // debrief (that's a summary, not a question), not a degraded/blocked one.
@@ -4725,6 +5023,59 @@ $('rp-followupBtn') && $('rp-followupBtn').addEventListener('click', function ()
     $('rp-followupBtn').disabled = false;
     renderCoachInto(out, text, okFlag, reason);
   });
+});
+
+/* ---------------------------------------------------------------- */
+/* CHAT UNDER THE CHART — genuine multi-turn conversation, chart-aware */
+/* ---------------------------------------------------------------- */
+
+var rpChatHistory = [];   // [{role:'user'|'assistant', text}] — replayed back to the server every turn
+
+function rpChatRender() {
+  var log = $('rp-chatLog');
+  if (!log) return;
+  log.innerHTML = rpChatHistory.map(function (m) {
+    var isUser = m.role === 'user';
+    return '<div style="align-self:' + (isUser ? 'flex-end' : 'flex-start') + ';max-width:88%">' +
+      '<div class="note" style="margin:0 0 2px;font-size:11px">' + (isUser ? 'You' : 'Professor') + '</div>' +
+      '<div style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;' +
+      'white-space:pre-wrap;line-height:1.5;' + (isUser ? 'opacity:.85' : '') + '">' + esc(m.text) + '</div></div>';
+  }).join('');
+  log.scrollTop = log.scrollHeight;
+}
+
+function rpChatSend() {
+  var input = $('rp-chatInput'), msg = $('rp-chatMsg'), btn = $('rp-chatSend');
+  if (!input || !btn) return;
+  var q = (input.value || '').trim();
+  if (!q) { msg.innerHTML = '<span class="excl">Type a question first.</span>'; return; }
+  msg.innerHTML = '';
+  rpChatHistory.push({ role: 'user', text: q });
+  input.value = '';
+  btn.disabled = true;
+  // history sent to the server is everything BEFORE this turn — the current
+  // question travels separately as `message`, and the "…" placeholder below
+  // is a render-only stand-in, never sent back.
+  var historyForServer = rpChatHistory.slice(0, -1);
+  var thinkingIdx = rpChatHistory.length;
+  rpChatHistory.push({ role: 'assistant', text: '…' });
+  rpChatRender();
+  coachCall('chat', { message: q, context: rpChartContext(), history: historyForServer }, function (text, okFlag, reason) {
+    btn.disabled = false;
+    if (reason === 'requiresAuth' || reason === 'limitReached') {
+      rpChatHistory.splice(thinkingIdx);   // drop the placeholder — this turn never happened
+      rpChatRender();
+      renderCoachInto(msg, text, okFlag, reason);
+      return;
+    }
+    rpChatHistory[thinkingIdx] = { role: 'assistant', text: text || 'Chat is unavailable right now.' };
+    rpChatRender();
+  });
+}
+
+$('rp-chatSend') && $('rp-chatSend').addEventListener('click', rpChatSend);
+$('rp-chatInput') && $('rp-chatInput').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); rpChatSend(); }
 });
 
 $('rp-coachAsk') && $('rp-coachAsk').addEventListener('click', function () { rpCoach('live'); });
