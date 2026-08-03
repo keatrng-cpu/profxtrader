@@ -42,19 +42,23 @@ const MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
 const FALLBACK_MODEL_SONNET = 'claude-sonnet-5';
 const FALLBACK_MODEL_HAIKU = 'claude-haiku-4-5';
 
-const HANDLER_BUDGET_MS = 9200;
+// Was 9200 under the assumption Netlify synchronous functions cap out
+// around ~10s. That's wrong — the real, documented limit is 60s (verified
+// against docs.netlify.com/build/functions/configuration, "Synchronous
+// execution limit: 60 seconds", not configurable, same across plans). The
+// tight 9.2s self-imposed deadline was the actual cause of `playbook`
+// (900 max_tokens, the longest generation of any mode) consistently
+// self-aborting via callClaude()'s own AbortController — confirmed live via
+// a temporary debugError field that surfaced the exact exception:
+// "This operation was aborted". Every other mode's shorter generations
+// happened to finish inside the old window; playbook's didn't. Raised to
+// 25s, which is generous for even the longest reply here while leaving
+// comfortable margin below the real 60s platform kill.
+const HANDLER_BUDGET_MS = 25000;
 const DISCOVERY_BUDGET_MS = 2200;
 const MAX_FIELD_CHARS = 6000;
 
-// playbook was 900 — live-tested and found to fail consistently (3/3) even
-// on a warm container right after a successful 700-token `ask` call moments
-// earlier, while every shorter-budget mode succeeded reliably. callClaude()
-// is a single non-streaming request that must fully complete inside
-// whatever's left of HANDLER_BUDGET_MS after auth + profile-fetch overhead —
-// a 6-section structured 900-token generation was consistently missing that
-// window. Reduced to fit reliably; a slightly shorter playbook that actually
-// renders beats a longer one that always falls back to the offline message.
-const TOKENS = { live: 220, debrief: 700, playbook: 600, ask: 700, tag: 200, weekly: 650, followup: 180, chat: 550, focus: 350 };
+const TOKENS = { live: 220, debrief: 700, playbook: 900, ask: 700, tag: 200, weekly: 650, followup: 180, chat: 550, focus: 350 };
 const PRO_ONLY_MODES = { weekly: true };
 const MODEL_TIER = {
   live: 'haiku', followup: 'haiku', tag: 'haiku', focus: 'haiku',
@@ -477,13 +481,13 @@ exports.handler = async function (event) {
       TOKENS[mode], deadline
     );
     const text = clean(raw, 6000);
-    if (!text) return ok({ ok: false, degraded: true, mode: mode, text: FALLBACK[mode], debugEmpty: true });
+    if (!text) return ok({ ok: false, degraded: true, mode: mode, text: FALLBACK[mode] });
     recordUsage(user.id, token, profile, mode, deadline).catch(function () {});   // fire-and-forget
     return ok({
       ok: true, mode: mode, text: text,
       usage: { tier: profile.subscription_tier, used: usedThisPeriod + 1, limit: isPro ? null : FREE_MONTHLY_LIMIT }
     });
   } catch (e) {
-    return ok({ ok: false, degraded: true, mode: mode, text: FALLBACK[mode], debugError: String((e && e.message) || e) });
+    return ok({ ok: false, degraded: true, mode: mode, text: FALLBACK[mode] });
   }
 };
