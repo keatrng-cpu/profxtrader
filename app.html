@@ -2027,6 +2027,11 @@ else if (typeof self !== 'undefined') self.EdgeEngine = API;   // Worker context
   const usd = (x) => (x === null || x === undefined ? '—'
     : '$' + Math.round(x).toLocaleString('en-US'));
   const NO_DATA = 'Import or log trades and this example fills in with your own numbers.';
+  /** Looks up one already-computed tag slice from the live EdgeEngine report
+   *  (report.slices) by dimension+value — e.g. sliceFor(rep,'killzone','nyopen').
+   *  Never recomputes a stat; only reads what buildReport() already produced. */
+  const sliceFor = (rep, dim, val) =>
+    (rep && rep.slices ? rep.slices : []).find((s) => s.dimension === dim && s.value === val) || null;
 
   /* ================================================================ */
   /* TAXONOMY — the tag set the journal enforces                      */
@@ -2035,7 +2040,10 @@ else if (typeof self !== 'undefined') self.EdgeEngine = API;   // Worker context
   const TAXONOMY = [
     { key: 'model', label: 'Model', required: true,
       values: ['mech', 'continuation', 'pdi', 'judas', 'amd'],
-      help: 'Which strategy pillar produced the setup.' },
+      help: 'Which entry archetype the setup actually satisfied — mech = HTF sweep then ' +
+        'inversion back into an unmitigated gap; continuation = strong trend, shallow tap, no deep ' +
+        'retracement; pdi = engineered range break (a small-scale AMD) then inversion; judas / amd = ' +
+        'the session-open false-move cycle. Full mechanics of each are in the Market Structure track.' },
     { key: 'gaptf', label: 'Gap timeframe', required: true,
       values: ['1m', '5m', '15m', '1h', '4h', 'daily', 'newweek'],
       help: 'Which unmitigated gap the entry referenced.' },
@@ -2044,7 +2052,8 @@ else if (typeof self !== 'undefined') self.EdgeEngine = API;   // Worker context
       help: 'The lower-timeframe signal you actually acted on.' },
     { key: 'killzone', label: 'Kill zone', required: true,
       values: ['nyopen', 'silverbullet', 'london', 'pmsession', 'outside'],
-      help: 'Time window of the entry.' },
+      help: 'Time window of the entry — nyopen ≈ 9:30-11:00 AM ET, pmsession ≈ 1:00-2:30 PM ET, ' +
+        'both approximate and not DST-adjusted (see the Kill Zones lesson for the exact caveat).' },
     { key: 'smt', label: 'SMT divergence', required: true, values: ['yes', 'no'],
       help: 'Was correlated-index divergence present.' },
     { key: 'htfbias', label: 'HTF alignment', required: true, values: ['with', 'against', 'neutral'],
@@ -2365,6 +2374,295 @@ else if (typeof self !== 'undefined') self.EdgeEngine = API;   // Worker context
         'that is a filed position and it belongs with a licensed professional.',
       caution: 'Educational only. Not tax or investment advice.',
     },
+
+    /* ============================================================ */
+    /* MARKET STRUCTURE & SMART MONEY CONCEPTS                       */
+    /*                                                                */
+    /* This app's own taxonomy, confluence rubric, and Structure.js    */
+    /* markup engine have always assumed this vocabulary (FVG, BOS,    */
+    /* order block, judas, AMD, kill zone...) without ever teaching it  */
+    /* — these eight lessons close that gap. Every mechanical claim     */
+    /* below was checked against multiple sourced references (LuxAlgo's */
+    /* published docs/Pine source, an open-source ICT-inspired Python    */
+    /* implementation, FTMO's trader education, and several independent  */
+    /* SMC/ICT tutorial sites) rather than written from memory, and every    */
+    /* place where those sources genuinely disagree is named as a         */
+    /* disagreement — not smoothed into one confident-sounding answer.    */
+    /* Where this app's OWN Structure.analyze() engine had to pick one     */
+    /* convention among several legitimate ones, that choice is stated     */
+    /* plainly so the lesson and the code never quietly contradict each     */
+    /* other.                                                                */
+    /* ============================================================ */
+    {
+      id: 'L13', track: 'Market Structure', title: 'Swing points, and what "trend" actually means',
+      mechanism:
+        'A swing high is a bar whose high exceeds every bar within k bars on each side; a swing low is ' +
+        'the mirror. It cannot be confirmed until those k bars to its right exist — a live swing is ' +
+        'unknowable in real time until then, which is why every downstream read (BOS, CHoCH, sweeps) ' +
+        'has to wait for it too. HH+HL in sequence is an uptrend; LH+LL is a downtrend. A break of the ' +
+        'most recent swing IN the prevailing direction is a BOS (continuation); the first break AGAINST ' +
+        'it is a CHoCH (reversal) — every source checked agreed on this polarity without exception. ' +
+        'What is not standardized anywhere is k itself: ICT-purist material uses k=1 (a bare 3-candle ' +
+        'pivot), the classic Bill Williams fractal uses k=2 (5 candles), and LuxAlgo’s own "swing-tier" ' +
+        'structure defaults to a 50+ bar lookback for the macro read. This app’s Structure.analyze() ' +
+        'uses k=2 — the classic 5-candle fractal — as a fixed, disclosed choice, not a claim that 2 is ' +
+        'the correct number.',
+      rule:
+        'Never label a pivot until it is actually confirmed k bars later, and treat BOS/CHoCH as ' +
+        'requiring a candle CLOSE beyond the prior level — the majority of sourced material (and this ' +
+        'app’s own engine) rejects a bare wick poke as a valid break.',
+      trigger:
+        'A wick beyond a swing extreme with no close beyond it is not a break of structure yet — it is ' +
+        'either still forming or it is a liquidity sweep of that level instead (see the liquidity lesson).',
+      compute: (ctx) => {
+        const rep = ctx.report; if (!rep || !rep.overall.n) return NO_DATA;
+        const bos = sliceFor(rep, 'ltfconfirm', 'bos'), ifvg = sliceFor(rep, 'ltfconfirm', 'ifvg'),
+              gapinv = sliceFor(rep, 'ltfconfirm', 'gapinv');
+        const parts = [bos, ifvg, gapinv].filter(Boolean)
+          .map((s) => `${s.value} n=${s.n} ${R(s.expectancyR)}`);
+        return parts.length
+          ? `Your LTF triggers so far: ${parts.join(' · ')}.`
+          : 'Tag ltfconfirm on your trades (bos / ifvg / gapinv) to see which structural trigger you actually act on, and how each one performs.';
+      },
+    },
+    {
+      id: 'L14', track: 'Market Structure', title: 'Fair value gaps — the one thing nobody agrees on',
+      mechanism:
+        'A bullish FVG is the 3-candle pattern where candle 1’s high sits below candle 3’s low — a ' +
+        'price zone the market skipped on the way up. Bearish is the mirror: candle 1’s low above ' +
+        'candle 3’s high. That geometry is close to universally agreed. What is NOT agreed is when a ' +
+        'gap counts as "mitigated": some tools require only a wick to touch it, others require a full ' +
+        'CLOSE through the far edge, others use the gap’s exact 50% midpoint ("consequent ' +
+        'encroachment"), and at least one major commercial indicator ships all three as a user toggle ' +
+        'rather than picking one. This app’s Structure.analyze() uses the loosest rule — any later ' +
+        'bar whose range overlaps the gap at all marks it mitigated — a real, disclosed, defensible ' +
+        'choice, not "the" standard.',
+      rule:
+        'Know which mitigation rule you are reading before you trust "still open" or "already filled" ' +
+        'from any tool, this one included — the same chart can show a gap as live or dead depending ' +
+        'purely on that setting.',
+      trigger:
+        'An unmitigated gap in your trade direction is a real, computed inefficiency worth watching — ' +
+        'it is not a guarantee price returns to fill it, and "it always fills" is not a rule any of the ' +
+        'sourced material actually supports.',
+      compute: (ctx) => {
+        const rep = ctx.report; if (!rep || !rep.overall.n) return NO_DATA;
+        const s = sliceFor(rep, 'ltfconfirm', 'ifvg');
+        return s
+          ? `Your ltfconfirm:ifvg trades: n=${s.n}, ${R(s.expectancyR)}, verdict "${s.verdict.status}".`
+          : 'No ltfconfirm:ifvg trades tagged yet — this fills in once you journal a few inverse-FVG entries.';
+      },
+    },
+    {
+      id: 'L15', track: 'Market Structure', title: 'Order blocks and breaker blocks — and what this app does not detect',
+      mechanism:
+        'An order block is the last opposite-color candle before an impulsive move that breaks market ' +
+        'structure — a bearish candle right before a structure-breaking rally is a bullish OB. A ' +
+        'breaker block is a FAILED order block: price returns to it, trades through with a body close ' +
+        'rather than holding, and the same level flips to expect the opposite reaction on a later ' +
+        'retest. Real, sourced disagreement exists on two points: whether the OB’s zone should be ' +
+        'drawn from the candle’s body only or its full wick range (both are legitimate, named styles), ' +
+        'and whether a liquidity sweep is a hard requirement for validity or just a bonus confluence — ' +
+        'most sources treat it as a bonus, one treats it as mandatory.',
+      rule:
+        'Be honest about what is actually computed here: this app’s Structure.analyze() detects ' +
+        'swings, fair value gaps, structure breaks, and liquidity sweeps — it does NOT auto-detect ' +
+        'order blocks or breaker blocks. If you trade them, mark them yourself with the chart’s ' +
+        'Rectangle drawing tool; nothing on the auto-markup will do it for you.',
+      trigger:
+        'A rectangle you draw by hand is your own judgment call, not a computed fact — the Professor ' +
+        'can read it back to you (it is included in the chart context), but it never grades itself the ' +
+        'way an FVG or a sweep does.',
+      compute: (ctx) => {
+        const rep = ctx.report; if (!rep || !rep.overall.n) return NO_DATA;
+        const s = sliceFor(rep, 'model', 'mech');
+        return s
+          ? `Your model:mech trades: n=${s.n}, ${R(s.expectancyR)}, verdict "${s.verdict.status}".`
+          : 'Tag model:mech on trades built around an order block / mechanical structure read to start scoring that pillar.';
+      },
+    },
+    {
+      id: 'L16', track: 'Market Structure', title: 'Liquidity — buy-side/sell-side pools, and what a sweep actually requires',
+      mechanism:
+        'Buy-side liquidity sits just above swing highs (breakout buy-stops plus short-sellers’ ' +
+        'protective stops); sell-side liquidity sits just below swing lows. Equal highs/lows (EQH/EQL) ' +
+        'are two or more swings clustering near the same price, treated as a denser pool than one ' +
+        'isolated swing. No sourced material gives a fixed, ICT-official tolerance for "equal" — every ' +
+        'coded implementation checked uses its own arbitrary threshold. "Sweep," "grab," and "raid" are ' +
+        'used interchangeably across sources with no standardized hierarchy between them — do not trust ' +
+        'a confident-sounding distinction between the three as settled fact. This app’s ' +
+        'Structure.analyze() uses the STRICTER of two real conventions found in the wild: a level only ' +
+        'counts as swept once price wicks beyond it AND closes back inside on the same bar — a bare ' +
+        'breach with no close-back is not flagged as a sweep here, and each level is consumed (reported ' +
+        'once, never re-flagged on a later poke).',
+      rule:
+        'A wick that pokes beyond a level and closes back inside is what this app calls a sweep. A wick ' +
+        'that pokes through and the close stays beyond it is a break, not a sweep — same event, ' +
+        'different meaning, and mixing them up misreads the market’s actual intent.',
+      trigger:
+        'A fresh sweep of the level your setup is watching is confluence; a level with no sweep yet is ' +
+        'still just resting liquidity, not something that has already been taken.',
+      compute: (ctx) => {
+        const rep = ctx.report; if (!rep || !rep.overall.n) return NO_DATA;
+        const yes = sliceFor(rep, 'smt', 'yes'), no = sliceFor(rep, 'smt', 'no');
+        return yes || no
+          ? `SMT divergence present: ${yes ? R(yes.expectancyR) + ' over n=' + yes.n : '—'}. ` +
+            `Absent: ${no ? R(no.expectancyR) + ' over n=' + no.n : '—'}.`
+          : 'Tag smt:yes/no on trades to see whether correlated-index divergence actually changes your results.';
+      },
+    },
+    {
+      id: 'L17', track: 'Market Structure', title: 'Premium, discount, and Optimal Trade Entry',
+      mechanism:
+        'Split any dealing range (a clean swing high to swing low leg) at its exact midpoint — that is ' +
+        'equilibrium. Price above it is premium (favor looking for shorts); below is discount (favor ' +
+        'longs). This 50% split is one of the few pieces of this whole vocabulary with real, ' +
+        'near-universal agreement across sources. Optimal Trade Entry (OTE) is the 0.618–0.79 ' +
+        'retracement zone of an impulsive leg (center around 0.705), also well-standardized — but only ' +
+        'valid, per the sourced material, after a liquidity sweep and a structure shift have already ' +
+        'confirmed the leg is real. A common mix-up worth correcting directly: "Consequent Encroachment" ' +
+        'is NOT the OTE zone — CE is the 50% midpoint of a specific fair value gap, a related but ' +
+        'distinct measurement that several lower-quality sources blur into OTE.',
+      rule:
+        '"Buy in discount, sell in premium" is a location filter you layer on top of other confluence, ' +
+        'not a standalone entry signal — plenty of valid setups happen without ever reaching OTE.',
+      trigger:
+        'A retracement shallower than 0.618 has not reached OTE yet; a close beyond the full 100% of ' +
+        'the leg is the commonly taught invalidation for the setup, not just "a deeper pullback than usual."',
+      compute: (ctx) => {
+        const rep = ctx.report; if (!rep || !rep.overall.n) return NO_DATA;
+        const w = sliceFor(rep, 'htfbias', 'with'), a = sliceFor(rep, 'htfbias', 'against');
+        return w || a
+          ? `Trading with HTF bias: ${w ? R(w.expectancyR) + ' over n=' + w.n : '—'}. ` +
+            `Against it: ${a ? R(a.expectancyR) + ' over n=' + a.n : '—'}.`
+          : 'Tag htfbias on trades (with/against/neutral) to see what fighting the higher-timeframe draw actually costs you.';
+      },
+    },
+    {
+      id: 'L18', track: 'Market Structure', title: 'Judas Swing and the Accumulation-Manipulation-Distribution cycle',
+      mechanism:
+        'AMD ("Power of Three") describes price in three phases: Accumulation, a quiet range where ' +
+        'positions build and stops cluster at the edges; Manipulation, a sharp false move OUT of that ' +
+        'range that sweeps those stops — this phase IS the Judas Swing, not a separate concept, named ' +
+        'for the betrayal of the apparent direction; and Distribution, the real move, opposite the ' +
+        'false one, toward the other side’s liquidity. Sourced material genuinely disagrees on which ' +
+        'session "anchors" the Judas Swing — older material ties it to the London Open, newer (2022+) ' +
+        'material reframes it around the New York Midnight Open — both are actively taught and neither ' +
+        'is more "official" than the other. What every source agrees on: the false move only counts ' +
+        'once it has swept a specific liquidity level AND been confirmed by a same-or-lower-timeframe ' +
+        'structure shift back toward the real direction — a fast move alone, with no sweep and no ' +
+        'confirming shift, is not a validated Judas Swing yet.',
+      rule:
+        'Do not trade the manipulation leg itself — by definition it is the false move. Wait for the ' +
+        'confirming structure shift before treating the reversal as real.',
+      trigger:
+        'A session-open spike that has not yet swept an actual resting liquidity level, or has swept ' +
+        'one but produced no confirming shift, is ordinary volatility, not a Judas Swing.',
+      compute: (ctx) => {
+        const rep = ctx.report; if (!rep || !rep.overall.n) return NO_DATA;
+        const j = sliceFor(rep, 'model', 'judas'), a = sliceFor(rep, 'model', 'amd');
+        const parts = [j, a].filter(Boolean).map((s) => `${s.value} n=${s.n} ${R(s.expectancyR)}`);
+        return parts.length ? parts.join(' · ') + '.'
+          : 'Tag model:judas or model:amd on trades built around this pattern to start scoring it.';
+      },
+    },
+    {
+      id: 'L19', track: 'Market Structure', title: 'Kill zones — the exact windows this app shades, and why they are approximate',
+      mechanism:
+        'ICT kill zone times are taught in New York LOCAL clock time, which means their UTC equivalent ' +
+        'shifts by an hour whenever the US changes clocks — and because the US and UK do not change ' +
+        'clocks on the same date, there are real windows each spring and fall where the usual 5-hour ' +
+        'NY–London offset is briefly wrong by an hour. This app’s chart-drawing kill-zone shading ' +
+        'uses fixed UTC bands, matched to this app’s OWN killzone tag values specifically rather than ' +
+        'the wider community range: Asian 01:00–05:00, London 07:00–10:00, nyopen 9:30–11:00 AM ET ' +
+        '(14:30–16:00 UTC), Silver Bullet 15:00–16:00 UTC, pmsession 1:00–2:30 PM ET (18:00–19:30 UTC). ' +
+        'General ICT sources cite a much wider and genuinely contested "NY AM" window (7:00–10:00 vs. ' +
+        '8:30–11:00 vs. 7:00–9:00 NY all appear across otherwise-credible sources) — this app narrows ' +
+        'to the specific 9:30–11:00 / 1:00–2:30 ET pair its own tag vocabulary was built around, which ' +
+        'is a real but narrower choice than the general community range, not a claim that range is ' +
+        'wrong. The Silver Bullet setup (an FVG must form within a strict one-hour window) has three ' +
+        'commonly-cited windows; the two morning ones (3–4 AM and 10–11 AM NY) are the more universally ' +
+        'agreed pair.',
+      rule:
+        'Treat kill-zone shading as a coarse "this is generally when the ICT community says liquidity ' +
+        'concentrates" guide, not a precise cutoff — and re-derive the exact UTC window yourself around ' +
+        'the March/November DST mismatch weeks if the boundary actually matters to your entry.',
+      trigger:
+        'A setup half an hour outside a shaded band is not automatically invalid — the bands themselves ' +
+        'are drawn from a contested boundary, most visibly for the NY AM window.',
+      compute: (ctx) => {
+        const rep = ctx.report; if (!rep || !rep.overall.n) return NO_DATA;
+        const zones = ['nyopen', 'silverbullet', 'london', 'pmsession', 'outside']
+          .map((v) => sliceFor(rep, 'killzone', v)).filter(Boolean);
+        return zones.length
+          ? zones.map((s) => `${s.value} n=${s.n} ${R(s.expectancyR)}`).join(' · ') + '.'
+          : 'Tag killzone on your trades to see which session window your own results actually favor.';
+      },
+    },
+    {
+      id: 'L20', track: 'Market Structure', title: 'Classic support/resistance vs. supply/demand zones — the inverted rule',
+      mechanism:
+        'Support/resistance is built from REPEATED tests of a level and, per every source checked, gets ' +
+        'MORE significant the more times price respects it. A supply/demand zone is built the opposite ' +
+        'way — from a single sharp, untested move away from a tight 1–3-candle base — and gets WEAKER ' +
+        'with each retest, since each visit fills more of the resting orders that made the zone matter ' +
+        'in the first place. That strength direction is inverted between the two frameworks, and it is ' +
+        'the single most commonly blurred distinction in retail price-action content. An order block ' +
+        '(see the earlier lesson) is functionally a tighter, rule-bound version of a supply/demand zone ' +
+        '— same "untested is strongest" logic, narrower definition. Separately: a trendline needs a ' +
+        'minimum of two points to draw at all, but is not considered CONFIRMED until a third touch — ' +
+        'one of the few genuinely hard, well-sourced numbers in this whole area.',
+      rule:
+        'Do not apply "it has been tested more, so it is stronger" to a supply/demand zone — that rule ' +
+        'belongs to support/resistance and trendlines, and it is backwards for supply/demand.',
+      trigger:
+        'A supply/demand zone that has already reacted price twice is weaker than the first time it was ' +
+        'tapped, not stronger — treat a third approach with real skepticism, not extra confidence.',
+      compute: (ctx) => {
+        const o = ctx.report && ctx.report.overall; if (!o || !o.n) return NO_DATA;
+        return `You have ${o.n} logged trades to test either framework against — note which zone type ` +
+          'a setup used in your journal note (there is no dedicated tag for it yet) and review whether ' +
+          'your own results track the "fresher is stronger" supply/demand logic or the "more tests, ' +
+          'more trust" support/resistance logic.';
+      },
+    },
+    {
+      id: 'L21', track: 'Market Structure', title: 'The three entry archetypes behind your "model" tag',
+      mechanism:
+        'Your model tag has three values this curriculum has not named yet beyond judas and amd: mech, ' +
+        'continuation, and pdi. They are not core, universally-standardized ICT terms — they are one ' +
+        'common way traders package the FVG/inversion/sweep vocabulary from the lessons above into three ' +
+        'named entry archetypes, distinguished mainly by what has to be true on the HIGHER timeframe ' +
+        'before the lower-timeframe trigger even matters. Mech is a reversal play: price sweeps a ' +
+        'higher-timeframe level after leaving a clean, unmitigated gap behind it on the way there, then ' +
+        'inverts a lower-timeframe counter-trend gap and snaps back toward that earlier gap — a messy, ' +
+        'already-rebalanced path there invalidates it. Continuation applies when the higher-timeframe ' +
+        'trend is too strong for a real retracement: price only taps a shallow, nearby gap instead of a ' +
+        'full premium/discount pullback, and a small counter-trend gap on a very low timeframe gets ' +
+        'immediately inverted back in the trend’s favor. Pdi treats a tight consolidation range as a ' +
+        'deliberately engineered accumulation phase — a fast false break out of it (literally the ' +
+        'manipulation leg of the AMD cycle from the earlier lesson, playing out on a smaller range) taps ' +
+        'a higher-timeframe zone, and a lower-timeframe inversion back through the range is what signals ' +
+        'the real move. All three still lean on the same building blocks already covered: FVG ' +
+        'inversion, SMT divergence, and a confirming structure shift — none of them are a new detection ' +
+        'primitive, just a different higher-timeframe precondition wrapped around the same triggers.',
+      rule:
+        'Tag model by which higher-timeframe condition was actually true BEFORE entry — a deep sweep ' +
+        'for mech, a strong trend with only a shallow tap for continuation, a tight range with a fast ' +
+        'false break for pdi — not by which label the entry resembles after the fact.',
+      trigger:
+        'If the higher-timeframe precondition was not really there, the trade does not belong to that ' +
+        'model no matter how clean the lower-timeframe inversion looked — that is an unlabeled ' +
+        'discretionary entry wearing a model tag it did not earn.',
+      compute: (ctx) => {
+        const rep = ctx.report; if (!rep || !rep.overall.n) return NO_DATA;
+        const parts = ['mech', 'continuation', 'pdi']
+          .map((v) => sliceFor(rep, 'model', v)).filter(Boolean)
+          .map((s) => `${s.value} n=${s.n} ${R(s.expectancyR)}`);
+        return parts.length ? parts.join(' · ') + '.'
+          : 'Tag model:mech, model:continuation, or model:pdi on trades to see how each archetype actually performs for you.';
+      },
+    },
   ];
 
   /* ================================================================ */
@@ -2444,6 +2742,47 @@ else if (typeof self !== 'undefined') self.EdgeEngine = API;   // Worker context
       options: ['Storage', 'It multiplies the hypotheses tested and raises the bar for every rule', 'Slower import', 'None'],
       answer: 1,
       why: 'Each new dimension adds pairs as well as singles. Correction gets stricter, so only add tags that change a decision.' },
+
+    { id: 'D17', tagKeys: ['ltfconfirm'], lesson: 'L13', type: 'choice',
+      q: 'Price breaks the most recent swing high while the prevailing structure is already an uptrend. What is that break called?',
+      options: ['CHoCH', 'BOS', 'A sweep', 'An order block'], answer: 1,
+      why: 'A break in the direction of the prevailing structure is a BOS (continuation). CHoCH is reserved for the first break AGAINST it.' },
+    { id: 'D18', tagKeys: [], lesson: 'L13', type: 'choice',
+      q: 'A candle wicks above the last swing high but closes back below it. Per the majority sourced convention (and this app’s engine), is that a confirmed break of structure?',
+      options: ['Yes, any wick beyond the level counts', 'No — a close beyond the level is required', 'Only on the daily timeframe', 'Only if volume is high'], answer: 1,
+      why: 'Most sourced material — and this app’s Structure.analyze() — requires a candle CLOSE beyond the prior level. A wick alone is not a confirmed break.' },
+    { id: 'D19', tagKeys: ['ltfconfirm'], lesson: 'L14', type: 'choice',
+      q: 'Is there a single, universally agreed rule for when a fair value gap counts as "mitigated"?',
+      options: ['Yes — any wick touch', 'Yes — always a full close through it', 'No — wick-touch, close-through, and 50% midpoint are all in real use', 'Yes — it never gets mitigated'], answer: 2,
+      why: 'Sourced research found all three conventions in active commercial and community use, with at least one major indicator shipping all three as a toggle. This app uses wick-touch.' },
+    { id: 'D20', tagKeys: [], lesson: 'L15', type: 'choice',
+      q: 'Does this app’s Structure.analyze() engine auto-detect order blocks or breaker blocks?',
+      options: ['Yes, both', 'Order blocks only', 'Breaker blocks only', 'No — only swings, FVGs, breaks, and sweeps'], answer: 3,
+      why: 'Being honest about what is actually computed: order blocks and breakers are not in the auto-markup. Mark them by hand with the chart’s Rectangle tool if you trade them.' },
+    { id: 'D21', tagKeys: ['smt'], lesson: 'L16', type: 'choice',
+      q: 'Per this app’s definition, price wicks below a swing low and CLOSES back above it on the same bar. What is that?',
+      options: ['A break of structure', 'A liquidity sweep', 'An order block', 'Nothing — needs a second touch'], answer: 1,
+      why: 'Wick beyond the level plus a close back inside is this app’s specific (stricter) definition of a sweep. A close that stays beyond the level would be a break instead.' },
+    { id: 'D22', tagKeys: ['htfbias'], lesson: 'L17', type: 'choice',
+      q: 'Price has retraced 40% of the impulsive leg. Has it reached the Optimal Trade Entry zone yet?',
+      options: ['Yes, that is within OTE', 'No — OTE is the 0.618 to 0.79 zone, well past a 40% retracement', 'Yes, if HTF bias agrees', 'OTE does not use retracement at all'], answer: 1,
+      why: 'OTE is specifically the 0.618-0.79 retracement band (center ~0.705) — a 40% (0.4) pullback has not reached it yet.' },
+    { id: 'D23', tagKeys: [], lesson: 'L18', type: 'choice',
+      q: 'A fast counter-trend move fires right at a session open but sweeps no liquidity level and produces no confirming structure shift. Is that a validated Judas Swing?',
+      options: ['Yes, timing alone is enough', 'No — a sweep AND a confirming shift are both required', 'Yes, if it happens at the London open specifically', 'No such thing as an unconfirmed Judas Swing'], answer: 1,
+      why: 'Every sourced definition requires both a liquidity sweep and a confirming structure shift back toward the real direction — timing alone does not qualify.' },
+    { id: 'D24', tagKeys: ['killzone'], lesson: 'L19', type: 'choice',
+      q: 'Which kill zone has the least agreement across sources on its exact start/end time?',
+      options: ['London Open', 'London Close', 'New York AM', 'Asian'], answer: 2,
+      why: 'Sourced material shows a real spread for NY AM (7:00-10:00 vs 8:30-11:00 vs 7:00-9:00 NY) with no single agreed boundary — the widest disagreement of any zone checked.' },
+    { id: 'D25', tagKeys: [], lesson: 'L20', type: 'choice',
+      q: 'A supply/demand zone has now been retested three times without breaking. Per the sourced convention, is it getting stronger or weaker?',
+      options: ['Stronger — more tests confirm it', 'Weaker — each test consumes more of the resting orders', 'No change — only the first test matters', 'Depends only on timeframe'], answer: 1,
+      why: 'Supply/demand zones weaken with each retest (the opposite of classic support/resistance, which strengthens with tests) — untested is the strongest state.' },
+    { id: 'D26', tagKeys: ['model'], lesson: 'L21', type: 'choice',
+      q: 'You tag a trade model:mech, but the higher-timeframe level it "swept" had already been chopped through repeatedly with no clean liquidity behind it. Is the tag earned?',
+      options: ['Yes — the lower-timeframe inversion still fired', 'No — mech specifically requires a clean run into the level, not a chopped one', 'Yes, any HTF touch counts', 'Only if it was profitable'], answer: 1,
+      why: 'The higher-timeframe precondition (a clean, unmitigated run into the level) is what defines the model — a matching lower-timeframe trigger on top of an invalid precondition does not earn the tag.' },
   ];
 
   function forContext(ctx) {
@@ -2456,7 +2795,7 @@ else if (typeof self !== 'undefined') self.EdgeEngine = API;   // Worker context
   }
 
   return { LESSONS, DRILLS, TAXONOMY, CONFLUENCE_RUBRIC, scoreConfluence, forContext,
-           TRACKS: ['Foundations', 'Evidence', 'Risk', 'Execution', 'Psychology', 'Business'] };
+           TRACKS: ['Foundations', 'Evidence', 'Risk', 'Execution', 'Psychology', 'Business', 'Market Structure'] };
 });
 
 </script>
@@ -5216,16 +5555,19 @@ function rpWireDrawingTool(pane) {
 // NY-local-time kill zone windows, expressed as fixed (non-DST-adjusted) UTC
 // hours — same honest simplification KILLZONE_UTC above already discloses:
 // the US and UK don't shift clocks on the same date, so real UTC boundaries
-// drift by up to an hour around late Oct and mid/late March. NY AM in
-// particular has no single agreed start/end across ICT sources (documented
-// spread: 7:00-10:00 vs 8:30-11:00 vs 7:00-9:00 NY) — the range below is the
-// most-cited outer bound, not a claimed precise standard.
+// drift by up to an hour around late Oct and mid/late March. nyopen and
+// pmsession are set to match this app's own killzone TAXONOMY values exactly
+// (9:30-11:00 AM ET and 1:00-2:30 PM ET) rather than the wider, less specific
+// "NY AM" window some general ICT sources cite (documented spread across
+// sources: 7:00-10:00 vs 8:30-11:00 vs 7:00-9:00 NY) — this app picked one
+// specific pair of windows for its own tag vocabulary, so the shading matches
+// that choice, not the broader unresolved community range.
 var KILLZONE_BANDS = [
   { key: 'asian', label: 'Asian KZ', fromUtc: 1, toUtc: 5, color: '#8b96b3' },
   { key: 'london', label: 'London KZ', fromUtc: 7, toUtc: 10, color: '#22d3ee' },
-  { key: 'nyam', label: 'NY AM KZ', fromUtc: 12, toUtc: 15, color: '#6366f1' },
+  { key: 'nyopen', label: 'NY open KZ', fromUtc: 14.5, toUtc: 16, color: '#6366f1' },
   { key: 'silverbullet', label: 'Silver Bullet', fromUtc: 15, toUtc: 16, color: '#b45cff' },
-  { key: 'londonclose', label: 'London Close KZ', fromUtc: 15, toUtc: 17, color: '#eab308' },
+  { key: 'pmsession', label: 'PM session KZ', fromUtc: 18, toUtc: 19.5, color: '#eab308' },
 ];
 
 function rpKillzoneShapes(view) {
@@ -6309,6 +6651,12 @@ var COURSE_WEEKS = [
     outcome: 'Price your own discipline tax in dollars and grade a trading week on adherence, not P&L.' },
   { title: 'Business', lessons: ['L11', 'L12'],
     outcome: 'Size against a prop firm’s trailing drawdown and keep a ledger a CPA can actually use.' },
+  { title: 'Market Structure — Basics', lessons: ['L13', 'L14', 'L15'],
+    outcome: 'Read swings, BOS/CHoCH, and fair value gaps the same disclosed way this app’s own chart markup does — and know exactly what it does not auto-detect.' },
+  { title: 'Market Structure — Liquidity & Timing', lessons: ['L16', 'L17', 'L19'],
+    outcome: 'Tell a real sweep from a plain break, place premium/discount and OTE correctly, and know which kill-zone boundaries are contested versus settled.' },
+  { title: 'Market Structure — Applied Models', lessons: ['L18', 'L20', 'L21'],
+    outcome: 'Recognize a validated Judas Swing versus ordinary volatility, avoid the classic supply/demand-vs-support/resistance mix-up, and tag model honestly by its actual precondition.' },
 ];
 
 function crsLessonRead(id) {
