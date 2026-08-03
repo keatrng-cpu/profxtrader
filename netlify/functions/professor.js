@@ -19,11 +19,12 @@
 //   playbook  — turn confirmed rules + leaks into written strategy prose
 //   ask       — free-form question, answered against their own stats
 //   chat      — genuine multi-turn conversation under the Replay chart
+//   focus     — narrates progress on the trader's own self-chosen Progress-tab goals
 //
-// MODEL ROUTING: quick single-shot nudges (live, followup, tag) run on Haiku —
-// they're short, latency-sensitive, and don't need deep reasoning. Anything
-// meant to be a real conversation or a detailed analysis (chat, ask, debrief,
-// playbook, weekly) runs on Sonnet. See MODEL_TIER below.
+// MODEL ROUTING: quick single-shot nudges (live, followup, tag, focus) run on
+// Haiku — they're short, latency-sensitive, and don't need deep reasoning.
+// Anything meant to be a real conversation or a detailed analysis (chat, ask,
+// debrief, playbook, weekly) runs on Sonnet. See MODEL_TIER below.
 //
 // GRACEFUL DEGRADATION: always HTTP 200. No key, timeout, or upstream error
 // returns a deterministic fallback line so the app never blocks on the model.
@@ -45,10 +46,10 @@ const HANDLER_BUDGET_MS = 9200;
 const DISCOVERY_BUDGET_MS = 2200;
 const MAX_FIELD_CHARS = 6000;
 
-const TOKENS = { live: 220, debrief: 700, playbook: 900, ask: 700, tag: 200, weekly: 650, followup: 180, chat: 550 };
+const TOKENS = { live: 220, debrief: 700, playbook: 900, ask: 700, tag: 200, weekly: 650, followup: 180, chat: 550, focus: 220 };
 const PRO_ONLY_MODES = { weekly: true };
 const MODEL_TIER = {
-  live: 'haiku', followup: 'haiku', tag: 'haiku',
+  live: 'haiku', followup: 'haiku', tag: 'haiku', focus: 'haiku',
   debrief: 'sonnet', playbook: 'sonnet', ask: 'sonnet', weekly: 'sonnet', chat: 'sonnet'
 };
 
@@ -270,6 +271,15 @@ const MODE_BRIEF = {
     'conversational: usually 2 to 5 short sentences, longer only if the question genuinely needs a fuller',
     'walkthrough. If no chart context was provided, say so plainly and answer from general trading',
     'education instead of guessing at what is on their screen.'
+  ].join(' '),
+  focus: [
+    'MODE: goal coaching. The trader picked specific behavioral goals to work on THEMSELVES — this was',
+    'not algorithmically assigned. The evidence below gives their real adherence rate, streak, and (where',
+    'enough trades exist) the expectancy cost of slipping on each one. Write 2 to 4 sentences: name which',
+    'goal is going best and which is going worst using the real numbers given, explain briefly why the',
+    'pattern matters, and end with one concrete instruction for their next session. If a goal has too few',
+    'tagged trades yet to say anything reliable, say that plainly instead of guessing. Never invent a',
+    'number, and never discuss a goal that is not in the evidence below.'
   ].join(' ')
 };
 
@@ -281,7 +291,8 @@ const FALLBACK = {
   ask: 'Coaching is offline right now. Your Bench and Risk lab numbers are still computed and current.',
   weekly: 'Coaching is offline right now. Your Profile & Stats page still has this week\u2019s real numbers.',
   followup: 'Coaching is offline right now — trust your own read on it.',
-  chat: 'Chat is offline right now — the numbers and structure on your chart are still exact.'
+  chat: 'Chat is offline right now — the numbers and structure on your chart are still exact.',
+  focus: 'Coaching is offline right now — your goal adherence numbers on the Progress tab are still exact.'
 };
 
 const SIGN_IN_MSG = 'Sign in to use the Professor — free accounts get 15 AI coaching calls a month, no card required.';
@@ -345,7 +356,7 @@ exports.handler = async function (event) {
   let body = {};
   try { body = JSON.parse(event.body || '{}'); } catch (e) { body = {}; }
 
-  const mode = ['live', 'debrief', 'playbook', 'ask', 'tag', 'weekly', 'followup', 'chat'].indexOf(String(body.mode || '')) !== -1
+  const mode = ['live', 'debrief', 'playbook', 'ask', 'tag', 'weekly', 'followup', 'chat', 'focus'].indexOf(String(body.mode || '')) !== -1
     ? String(body.mode) : 'ask';
 
   // Coaching requires an account — usage has to be tied to a stable identity

@@ -634,6 +634,10 @@
           <option value="#000000">Black</option>
           <option value="#ffffff">White</option>
         </select></label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)">Grid color
+        <input type="color" id="cc-gridcolor" class="swatch"></label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)">Background
+        <input type="color" id="cc-background" class="swatch"></label>
       <button class="btn ghost tiny" id="cc-reset" type="button">Reset colors</button>
     </div>
   </div>
@@ -980,6 +984,19 @@
     computed" below for the exact arithmetic.</div>
 
   <div class="card" id="pg-tierCard"></div>
+
+  <h2>Your goals</h2>
+  <div class="note" style="margin:0 0 10px">Pick up to 3 behaviors to work on. Progress below is read straight
+    off your tagged trades and the same per-tag slice stats the Bench tab shows — never a separate estimate.
+    This is deliberately lighter-weight than a "confirmed leak" (which needs 30+ trades and a permutation
+    test to even qualify): a goal shows an adherence rate and streak on whatever sample you have, with an
+    honest n so you can judge how much to trust it yet.</div>
+  <div class="card" id="pg-goalPicker" style="margin-bottom:10px"></div>
+  <div class="card" id="pg-goals">
+    <div id="pg-goalsBody"></div>
+    <button class="btn ghost tiny" id="pg-focusAsk" type="button" style="margin-top:10px;display:none">Get the Professor's take</button>
+    <div class="note" id="pg-focusOut" style="margin-top:10px"></div>
+  </div>
 
   <h2>Streak — realized R vs planned R</h2>
   <div class="note" style="margin:0 0 10px">Consecutive Replay sessions, oldest to newest, where your average
@@ -5206,10 +5223,26 @@ var RPCharts = (function () {
     wickUpColor: '#22c55e', wickDownColor: '#ef4444', wickVisible: true,
     borderUpColor: '#22c55e', borderDownColor: '#ef4444', borderVisible: false,
   };
-  // Kept separate from `theme` above — this is a chart-level option
-  // (price/time scale axis lines), not a candlestick series option, so it
-  // gets applied via chart.applyOptions(), never series.applyOptions().
+  // Kept separate from `theme` above — these are chart-level options
+  // (price/time scale axis lines, the grid lines, and the chart's own fill —
+  // previously 'transparent', which just let the app's navy page background
+  // show through), not candlestick series options, so they get applied via
+  // chart.applyOptions(), never series.applyOptions(). This only repaints the
+  // chart canvas itself — the rest of the app's background is untouched.
   var chartBorderColor = '#232b42';
+  var chartBackground = '#ffffff';
+  var gridColor = '#e4e7ee';
+
+  /** Standard relative-luminance check so axis/price text stays readable
+   *  whichever background color is picked, instead of one fixed gray-blue
+   *  that only reads well on a dark chart. */
+  function relLuminance(hex) {
+    hex = String(hex || '').replace('#', '');
+    if (hex.length !== 6) return 0;
+    var r = parseInt(hex.slice(0, 2), 16) / 255, g = parseInt(hex.slice(2, 4), 16) / 255, b = parseInt(hex.slice(4, 6), 16) / 255;
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function textColorFor(bg) { return relLuminance(bg) > 0.5 ? '#3a4256' : '#8b96b3'; }
 
   /** Custom series primitive: shaded price-range boxes for open FVGs.
    *  Lightweight Charts calls updateAllViews() before every repaint (pan,
@@ -5326,9 +5359,9 @@ var RPCharts = (function () {
     var el = $(containerId); if (!el) return null;
     var chart = LightweightCharts.createChart(el, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: '#8b96b3',
+      layout: { background: { color: chartBackground }, textColor: textColorFor(chartBackground),
                 fontFamily: 'ui-monospace,SF Mono,Menlo,Consolas,monospace', fontSize: 10 },
-      grid: { vertLines: { color: 'rgba(57,67,95,.35)' }, horzLines: { color: 'rgba(57,67,95,.35)' } },
+      grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
       rightPriceScale: { borderColor: chartBorderColor },
       timeScale: { borderColor: chartBorderColor, timeVisible: true, secondsVisible: false },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
@@ -5349,17 +5382,25 @@ var RPCharts = (function () {
   function setTheme(t) {
     t = t || {};
     if (t.chartBorderColor) chartBorderColor = t.chartBorderColor;
+    if (t.gridColor) gridColor = t.gridColor;
+    if (t.chartBackground) chartBackground = t.chartBackground;
     theme = Object.assign({}, theme, t);
     delete theme.chartBorderColor;   // not a candlestick series option — never forwarded to applyOptions
+    delete theme.gridColor;          // ditto — chart-level grid option, not a series option
+    delete theme.chartBackground;    // ditto — chart-level layout option, not a series option
     Object.keys(panes).forEach(function (k) {
       panes[k].series.applyOptions(theme);
       panes[k].chart.applyOptions({
         rightPriceScale: { borderColor: chartBorderColor },
-        timeScale: { borderColor: chartBorderColor }
+        timeScale: { borderColor: chartBorderColor },
+        grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
+        layout: { background: { color: chartBackground }, textColor: textColorFor(chartBackground) }
       });
     });
   }
-  function getTheme() { return Object.assign({}, theme, { chartBorderColor: chartBorderColor }); }
+  function getTheme() {
+    return Object.assign({}, theme, { chartBorderColor: chartBorderColor, gridColor: gridColor, chartBackground: chartBackground });
+  }
 
   function clearLines(pane) {
     pane.priceLines.forEach(function (l) { try { pane.series.removePriceLine(l); } catch (e) {} });
@@ -5406,7 +5447,7 @@ var CHART_THEME_DEFAULT = {
   upColor: '#22c55e', downColor: '#ef4444',
   wickUpColor: '#22c55e', wickDownColor: '#ef4444', wickVisible: true,
   borderUpColor: '#22c55e', borderDownColor: '#ef4444', borderVisible: false,
-  chartBorderColor: '#232b42',
+  chartBorderColor: '#232b42', gridColor: '#e4e7ee', chartBackground: '#ffffff',
 };
 function rpChartTheme() { return Object.assign({}, CHART_THEME_DEFAULT, state.chartTheme || {}); }
 function rpSyncThemeInputs() {
@@ -5417,6 +5458,8 @@ function rpSyncThemeInputs() {
   $('cc-bordervisible').checked = !!t.borderVisible;
   $('cc-wickvisible').checked = t.wickVisible !== false;
   $('cc-chartborder').value = t.chartBorderColor;
+  $('cc-gridcolor').value = t.gridColor;
+  $('cc-background').value = t.chartBackground;
 }
 function rpSetThemeField(key, val) {
   state.chartTheme = rpChartTheme();
@@ -5434,6 +5477,12 @@ function rpSetThemeField(key, val) {
 });
 $('cc-chartborder') && $('cc-chartborder').addEventListener('change', function () {
   rpSetThemeField('chartBorderColor', $('cc-chartborder').value);
+});
+$('cc-gridcolor') && $('cc-gridcolor').addEventListener('input', function () {
+  rpSetThemeField('gridColor', $('cc-gridcolor').value);
+});
+$('cc-background') && $('cc-background').addEventListener('input', function () {
+  rpSetThemeField('chartBackground', $('cc-background').value);
 });
 $('cc-reset') && $('cc-reset').addEventListener('click', function () {
   state.chartTheme = Object.assign({}, CHART_THEME_DEFAULT);
@@ -6805,6 +6854,7 @@ function authInit() {
 }
 
 cacheLoad();
+state.goals = state.goals || [];     // goal ids the trader picked on the Progress tab
 RPCharts.setTheme(rpChartTheme());   // must run after cacheLoad — reads state.chartTheme
 rpSyncThemeInputs();
 buildTagFields();
@@ -7347,6 +7397,129 @@ function progressDrillMastery() {
   return { mastered: mastered, total: C.DRILLS.length };
 }
 
+/* ---------------------------------------------------------------- */
+/* GOALS — the trader picks up to 3 behaviors from a short catalog    */
+/* mapped straight onto the same closed TAXONOMY tag values the       */
+/* journal already enforces. Deliberately NOT the same thing as       */
+/* report.leaks: a leak needs n>=30 and a permutation test to earn    */
+/* that label, so it says nothing about what to work on THIS week on  */
+/* a thinner sample. A goal reads adherence and streak off whatever   */
+/* tagged trades exist right now, with the true n always shown, so    */
+/* the trader can judge for themselves how much to trust it yet.      */
+/* ---------------------------------------------------------------- */
+var GOALS = [
+  { id: 'management', label: 'Manage every trade to plan', dim: 'management', good: ['torules'],
+    badLabel: 'off-plan management — cut early, moved stop, or held past target' },
+  { id: 'killzone', label: 'Only trade inside a kill zone', dim: 'killzone',
+    good: ['nyopen', 'silverbullet', 'london', 'pmsession'],
+    badLabel: 'entries taken outside a kill zone window' },
+  { id: 'plan', label: 'Only take setups written down beforehand', dim: 'plan', good: ['planned'],
+    badLabel: 'improvised entries' },
+  { id: 'entrytiming', label: 'Get in on trigger, not early, late, or chased', dim: 'entrytiming',
+    good: ['ontrigger'], badLabel: 'off-trigger entries' }
+];
+var GOALS_MAX = 3;
+
+/** Reads adherence, streak, and the matching EdgeEngine slice stats for one
+ *  goal — no new arithmetic, just filtering and lookups over tradesN/report,
+ *  the same arrays every other tab already reads. */
+function goalProgress(g) {
+  var tagged = tradesN.filter(function (t) { return t.tags && t.tags[g.dim]; });
+  var good = tagged.filter(function (t) { return g.good.indexOf(t.tags[g.dim]) !== -1; });
+  var streak = 0;
+  for (var i = tagged.length - 1; i >= 0; i--) {
+    if (g.good.indexOf(tagged[i].tags[g.dim]) !== -1) streak++; else break;
+  }
+  var slices = (report && report.slices) ? report.slices : [];
+  var badSlices = slices.filter(function (s) { return s.dimension === g.dim && g.good.indexOf(s.value) === -1; })
+    .sort(function (a, b) { return a.expectancyR - b.expectancyR; });
+  var goodSlices = slices.filter(function (s) { return s.dimension === g.dim && g.good.indexOf(s.value) !== -1; });
+  var goodN = goodSlices.reduce(function (a, s) { return a + s.n; }, 0);
+  var goodExpectancy = goodN ? goodSlices.reduce(function (a, s) { return a + s.expectancyR * s.n; }, 0) / goodN : null;
+  return {
+    n: tagged.length, adherenceN: good.length,
+    adherenceRate: tagged.length ? good.length / tagged.length : null,
+    streak: streak, worstBad: badSlices[0] || null, goodExpectancy: goodExpectancy
+  };
+}
+
+/** Same facts as renderGoals(), as plain text for the Professor's `focus`
+ *  mode — never a number the UI doesn't also show, just narrated. */
+function goalsContextText() {
+  var active = GOALS.filter(function (g) { return (state.goals || []).indexOf(g.id) !== -1; });
+  if (!active.length) return '';
+  var lines = ['The trader chose these goals to work on themselves — not algorithmically picked:'];
+  active.forEach(function (g) {
+    var p = goalProgress(g);
+    if (!p.n) { lines.push('- ' + g.label + ': no tagged trades yet.'); return; }
+    var line = '- ' + g.label + ': ' + p.adherenceN + ' of ' + p.n + ' trades on-goal (' +
+      pct(p.adherenceRate) + '), current streak ' + p.streak + '.';
+    if (p.worstBad) {
+      line += ' Worst slip "' + p.worstBad.value + '": ' + R(p.worstBad.expectancyR) + ' avg over ' +
+        p.worstBad.n + ' trades' + (p.goodExpectancy !== null ? ' vs ' + R(E.round(p.goodExpectancy, 3)) + ' when on-goal' : '') + '.';
+    }
+    lines.push(line);
+  });
+  return lines.join('\n');
+}
+
+function renderGoals() {
+  if (!$('pg-goalPicker')) return;
+  state.goals = state.goals || [];
+  $('pg-goalPicker').innerHTML = GOALS.map(function (g) {
+    var active = state.goals.indexOf(g.id) !== -1;
+    return '<label class="check" style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;border:0;padding:0">' +
+      '<input type="checkbox" data-goal="' + g.id + '"' + (active ? ' checked' : '') + '>' +
+      '<span><b style="font-size:12.5px">' + esc(g.label) + '</b><br>' +
+      '<span class="mut" style="font-size:11px">avoids: ' + esc(g.badLabel) + '</span></span></label>';
+  }).join('');
+  Array.prototype.forEach.call($('pg-goalPicker').querySelectorAll('input[data-goal]'), function (inp) {
+    inp.addEventListener('change', function () {
+      state.goals = state.goals || [];
+      var id = inp.dataset.goal;
+      if (inp.checked) {
+        if (state.goals.length >= GOALS_MAX) { inp.checked = false; return; }
+        state.goals.push(id);
+      } else {
+        state.goals = state.goals.filter(function (x) { return x !== id; });
+      }
+      cacheSave();
+      renderGoals();
+    });
+  });
+
+  var active = GOALS.filter(function (g) { return state.goals.indexOf(g.id) !== -1; });
+  var focusBtn = $('pg-focusAsk');
+  if (!active.length) {
+    $('pg-goalsBody').innerHTML = '<div class="mut">Pick at least one goal above — progress fills in from ' +
+      'your tagged trades automatically, no separate setup.</div>';
+    if (focusBtn) focusBtn.style.display = 'none';
+    $('pg-focusOut').innerHTML = '';
+    return;
+  }
+  if (focusBtn) focusBtn.style.display = '';
+  $('pg-goalsBody').innerHTML = active.map(function (g) {
+    var p = goalProgress(g);
+    if (!p.n) {
+      return '<div style="margin-bottom:14px"><b style="font-size:12.5px">' + esc(g.label) + '</b>' +
+        '<div class="mut" style="font-size:12px">No tagged trades yet for this dimension.</div></div>';
+    }
+    var rateCls = p.adherenceRate >= 0.8 ? 'pos' : p.adherenceRate >= 0.5 ? '' : 'neg';
+    var costLine = p.worstBad
+      ? 'Worst slip so far — <code>' + esc(p.worstBad.value) + '</code>: ' + R(p.worstBad.expectancyR) +
+        ' avg over ' + p.worstBad.n + ' trades' +
+        (p.goodExpectancy !== null ? ' vs ' + R(E.round(p.goodExpectancy, 3)) + ' when on-goal' : '') + '.'
+      : 'Not enough trades yet in any single slip to compare expectancy.';
+    return '<div style="margin-bottom:14px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">' +
+      '<b style="font-size:12.5px">' + esc(g.label) + '</b><span class="mut" style="font-size:11px">n=' + p.n + '</span></div>' +
+      '<div style="margin-top:4px"><span class="num ' + rateCls + '" style="font-size:15px">' + pct(p.adherenceRate) + '</span> ' +
+      '<span class="mut" style="font-size:12px">on-goal (' + p.adherenceN + ' of ' + p.n + ')' +
+      (p.streak >= 2 ? ' · current streak ' + p.streak : '') + '</span></div>' +
+      '<div class="mut" style="font-size:12px;margin-top:2px">' + costLine + '</div></div>';
+  }).join('');
+}
+
 var PROGRESS_TIERS = [
   { name: 'Novice',
     requirement: function () { return 'No gate — the floor every trader starts on.'; },
@@ -7479,7 +7652,22 @@ function renderProgress() {
     '<p style="margin:0"><b>Drill mastery</b> — the identical box≥ 4 definition the Professor tab’s Drill ' +
     'section already uses. No score on this page is estimated, guessed, or awarded for effort — every number ' +
     'here is arithmetic over your own ledger and recomputes the moment that ledger changes.</p>';
+
+  renderGoals();
 }
+
+$('pg-focusAsk') && $('pg-focusAsk').addEventListener('click', function () {
+  var ctx = goalsContextText();
+  if (!ctx) return;
+  var btn = $('pg-focusAsk');
+  btn.disabled = true;
+  var label = btn.textContent; btn.textContent = 'Asking…';
+  $('pg-focusOut').innerHTML = '<span class="mut">Reading your goal numbers…</span>';
+  coachCall('focus', { context: ctx }, function (text, ok, reason) {
+    btn.disabled = false; btn.textContent = label;
+    renderCoachInto($('pg-focusOut'), text, ok, reason);
+  });
+});
 
 /* ---- wiring: additive-only. Wraps (does not edit) renderAll() and         */
 /* reportDependentRenders() so the Progress tab redraws whenever every other */
