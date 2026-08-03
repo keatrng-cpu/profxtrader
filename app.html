@@ -6861,6 +6861,33 @@ function authRenderProfilePage() {
 $('profileSignInBtn').addEventListener('click', function () { authOpen('signin'); });
 $('acctSignOutBtn').addEventListener('click', function () { sb && sb.auth.signOut(); });
 
+/* ---- local-state ownership guard ---- */
+/**
+ * The local cache (state, in localStorage under KEY) is a single blob per
+ * browser profile — it has no idea which account it belongs to. Without
+ * this check, signing into Account B on a browser that still has Account
+ * A's cached trades sitting in `state` doesn't just show A's data by
+ * mistake: authSyncPush() upserts *everything* in state.trades tagged with
+ * whichever account is currently authenticated, so A's trades get written
+ * into B's real cloud ledger on the very next sync. Reset to a blank slate
+ * whenever the signed-in user doesn't match who the cache was last saved
+ * for; adopt it silently (no reset) the first time a user signs in on top
+ * of un-owned guest data, or their own returning data.
+ */
+function authClaimLocalState(userId) {
+  if (state.ownerId && state.ownerId !== userId) {
+    state = { trades: [], memory: {}, checklist: {}, settings: {}, goals: [],
+              chartTheme: null, bars: [], barsMeta: null, savedAt: null, ownerId: userId };
+    if (typeof RPCharts !== 'undefined' && typeof rpChartTheme === 'function') {
+      RPCharts.setTheme(rpChartTheme());
+      if (typeof rpSyncThemeInputs === 'function') rpSyncThemeInputs();
+    }
+  } else {
+    state.ownerId = userId;
+  }
+  cacheSave();
+}
+
 /* ---- profile fetch + subscription/usage ---- */
 function authRefreshProfile() {
   if (!sb || !authUser) return Promise.resolve();
@@ -7012,6 +7039,7 @@ function authInit() {
     authRenderSidebar();
     if (authUser) {
       authClose();                       // gate cleared — dismiss the card
+      authClaimLocalState(authUser.id);  // must run before any push/pull sync
       authRefreshProfile().then(function () {
         authSyncNow();
       });
@@ -7026,6 +7054,7 @@ function authInit() {
     authUser = r.data.session ? r.data.session.user : null;
     authRenderSidebar();
     if (authUser) {
+      authClaimLocalState(authUser.id);  // must run before any push/pull sync
       authRefreshProfile();
     } else {
       // No session on load: raise the sign-in gate. Honor ?mode=signup so the
