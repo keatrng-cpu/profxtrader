@@ -6916,16 +6916,33 @@ function tradeToRemoteRow(t, idx) {
     source: t.replay ? 'replay' : 'journal'
   };
 }
+// Both functions re-check state.ownerId against the LIVE authUser at the
+// exact moment they'd touch the network, not just when the sync chain was
+// kicked off — authRefreshProfile()/authSyncPush()/authSyncPull() form a
+// promise chain that spans real network round trips, and authUser/state are
+// both shared globals. If the signed-in account changes mid-chain (sign out,
+// sign in as someone else, all before the first chain's Supabase calls
+// actually land), a push captured under the old account must never land
+// tagged with the new one, and a pull must never write into a state object
+// that's since been reset for someone else. authClaimLocalState() sets
+// state.ownerId synchronously the instant the account changes, so comparing
+// against it here — not just checking authUser is truthy — is what actually
+// closes the race, however exactly it happens to interleave.
 function authSyncPush() {
   if (!sb || !authUser || !state.trades.length) return Promise.resolve();
+  if (state.ownerId && state.ownerId !== authUser.id) return Promise.resolve();
   var rows = state.trades.map(tradeToRemoteRow);
   return sb.from('profx_trades').upsert(rows, { onConflict: 'user_id,client_id' });
 }
 function authSyncPull() {
   if (!sb || !authUser) return Promise.resolve();
-  return sb.from('profx_trades').select('*').eq('user_id', authUser.id)
+  var pullUserId = authUser.id;
+  return sb.from('profx_trades').select('*').eq('user_id', pullUserId)
     .then(function (r) {
       if (r.error || !r.data) return;
+      // Same race guard as authSyncPush(): only merge into state if it's
+      // still this account's state by the time the network call returns.
+      if (!authUser || authUser.id !== pullUserId || state.ownerId !== pullUserId) return 0;
       var localIds = {};
       state.trades.forEach(function (t, i) { localIds[String(t.id || ('local-' + i))] = true; });
       var added = 0;
