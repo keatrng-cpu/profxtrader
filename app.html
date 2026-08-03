@@ -503,6 +503,7 @@
     <div class="note" id="rp-monthNote">Futures are real CME/CBOT/NYMEX/COMEX data (continuous front-month
       contract) from Databento — not an ETF approximation. Pick any specific past month back to 2000. FX and
       crypto only cover recent trading; for a specific past date on those, drop your own CSV below instead.</div>
+    <div class="note" id="rp-avNote" style="display:none"></div>
   </div>
 
   <div class="drop" id="rp-drop" tabindex="0" role="button" style="margin-top:12px">
@@ -4866,6 +4867,27 @@ function rpUpdateMonthPicker() {
 }
 $('rp-mkt') && $('rp-mkt').addEventListener('change', rpUpdateMonthPicker);
 rpUpdateMonthPicker();
+
+// Alpha Vantage's FX_INTRADAY / CRYPTO_INTRADAY are premium-only endpoints — a
+// free-tier key gets an in-band "Information: premium endpoint" response, which
+// bars.js correctly surfaces as a load failure. Warn before the click, not just
+// after, since "Daily" and "drop a CSV" both work today regardless of plan.
+function rpUpdateAvNote() {
+  var el = $('rp-avNote');
+  if (!el) return;
+  var isFutures = rpMarketSupportsMonth($('rp-mkt').value);
+  var isIntraday = $('rp-int').value !== 'daily';
+  if (!isFutures && isIntraday) {
+    el.style.display = '';
+    el.innerHTML = '<span class="excl">Heads up:</span> intraday FX/crypto is a premium Alpha Vantage ' +
+      'endpoint. On a free-tier key this load will fail — pick <b>Daily</b> instead, or drop a CSV below.';
+  } else {
+    el.style.display = 'none';
+  }
+}
+$('rp-mkt') && $('rp-mkt').addEventListener('change', rpUpdateAvNote);
+$('rp-int') && $('rp-int').addEventListener('change', rpUpdateAvNote);
+rpUpdateAvNote();
 
 $('rp-load') && $('rp-load').addEventListener('click', function () {
   var sym = $('rp-mkt').value, iv = $('rp-int').value;
