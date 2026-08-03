@@ -6882,6 +6882,12 @@ function authClaimLocalState(userId) {
       RPCharts.setTheme(rpChartTheme());
       if (typeof rpSyncThemeInputs === 'function') rpSyncThemeInputs();
     }
+    // The reset above only touches the state object — nothing re-renders on
+    // its own. authSyncPull() only calls recompute() when it actually adds
+    // rows, so a brand-new account with zero cloud trades would otherwise
+    // leave the previous owner's stale ledger/Bench/Progress numbers on
+    // screen even though state.trades is now genuinely empty underneath.
+    if (typeof recompute === 'function') recompute();
   } else {
     state.ownerId = userId;
   }
