@@ -46,7 +46,15 @@ const HANDLER_BUDGET_MS = 9200;
 const DISCOVERY_BUDGET_MS = 2200;
 const MAX_FIELD_CHARS = 6000;
 
-const TOKENS = { live: 220, debrief: 700, playbook: 900, ask: 700, tag: 200, weekly: 650, followup: 180, chat: 550, focus: 350 };
+// playbook was 900 — live-tested and found to fail consistently (3/3) even
+// on a warm container right after a successful 700-token `ask` call moments
+// earlier, while every shorter-budget mode succeeded reliably. callClaude()
+// is a single non-streaming request that must fully complete inside
+// whatever's left of HANDLER_BUDGET_MS after auth + profile-fetch overhead —
+// a 6-section structured 900-token generation was consistently missing that
+// window. Reduced to fit reliably; a slightly shorter playbook that actually
+// renders beats a longer one that always falls back to the offline message.
+const TOKENS = { live: 220, debrief: 700, playbook: 600, ask: 700, tag: 200, weekly: 650, followup: 180, chat: 550, focus: 350 };
 const PRO_ONLY_MODES = { weekly: true };
 const MODEL_TIER = {
   live: 'haiku', followup: 'haiku', tag: 'haiku', focus: 'haiku',
