@@ -220,6 +220,10 @@
     text-align:center;cursor:pointer;color:var(--muted);transition:border-color .15s,background .15s}
   .drop:hover,.drop.over{border-color:var(--accent);background:var(--surface);color:var(--text)}
   input[type=file]{display:none}
+  input.swatch{width:26px;height:24px;padding:1px;border:1px solid var(--border);border-radius:5px;
+    background:var(--bg2);cursor:pointer}
+  input.swatch::-webkit-color-swatch-wrapper{padding:1px}
+  input.swatch::-webkit-color-swatch{border:0;border-radius:3px}
 
   /* ---------- footer disclaimer ---------- */
   footer{color:var(--dim)!important;border-top:1px solid var(--border)!important}
@@ -576,13 +580,46 @@
   </div>
 
   <h2><span class="tag" style="margin:0 8px 0 0">3</span>Chart <span class="note" id="rp-ident"></span></h2>
+  <div class="card" style="margin-bottom:10px">
+    <div class="note" style="margin:0 0 8px">Chart appearance — applies to every chart in the app (Replay, Practice Arena, Prop Challenge).</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)">Up body
+        <input type="color" id="cc-upcolor" class="swatch"></label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)">Down body
+        <input type="color" id="cc-downcolor" class="swatch"></label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)">Up wick
+        <input type="color" id="cc-wickup" class="swatch"></label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)">Down wick
+        <input type="color" id="cc-wickdown" class="swatch"></label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)">Up border
+        <input type="color" id="cc-borderup" class="swatch"></label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)">Down border
+        <input type="color" id="cc-borderdown" class="swatch"></label>
+      <label class="check" style="margin:0;border:0;padding:0">
+        <input type="checkbox" id="cc-bordervisible"> <span style="font-size:11px;color:var(--muted)">Show border</span></label>
+      <label class="check" style="margin:0;border:0;padding:0">
+        <input type="checkbox" id="cc-wickvisible" checked> <span style="font-size:11px;color:var(--muted)">Show wick</span></label>
+      <button class="btn ghost tiny" id="cc-reset" type="button">Reset colors</button>
+    </div>
+  </div>
   <div class="card" style="padding:8px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;padding:0 4px">
+      <span class="note" style="margin:0">Draw:</span>
+      <button class="btn ghost tiny" id="rp-tool-none" type="button" data-tool="none">Cursor</button>
+      <button class="btn ghost tiny" id="rp-tool-trend" type="button" data-tool="trend">Trendline</button>
+      <button class="btn ghost tiny" id="rp-tool-rect" type="button" data-tool="rect">Rectangle</button>
+      <button class="btn ghost tiny" id="rp-tool-marker" type="button" data-tool="marker">Rejection marker</button>
+      <label class="check" style="margin:0 0 0 8px;border:0;padding:0">
+        <input type="checkbox" id="rp-killzones"> <span style="font-size:11px;color:var(--muted)">Shade kill zones</span></label>
+      <button class="btn ghost tiny" id="rp-clear-drawings" type="button" style="margin-left:auto">Clear drawings</button>
+    </div>
     <div style="position:relative">
       <div id="rp-canvas" style="width:100%;height:380px"></div>
       <div id="rp-canvas-empty" class="note" style="position:absolute;left:14px;top:10px;margin:0;pointer-events:none">Load bars and start a session.</div>
       <div id="rp-canvas-stamp-l" class="note" style="position:absolute;left:8px;bottom:2px;margin:0;pointer-events:none;font-size:11px"></div>
       <div id="rp-canvas-stamp-r" class="note" style="position:absolute;right:8px;bottom:2px;margin:0;pointer-events:none;font-size:11px"></div>
     </div>
+    <div class="note" id="rp-toolNote" style="margin-top:6px"></div>
     <div style="position:relative;margin-top:6px">
       <div id="rp-canvas-htf" style="width:100%;height:170px"></div>
     </div>
@@ -674,6 +711,13 @@
       <div><label for="rp-tgt">Target price</label><input id="rp-tgt" inputmode="decimal"></div>
       <div><label>Computed size</label><div class="v" id="rp-size" style="font-size:15px;padding-top:4px">—</div></div>
     </div>
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn ghost tiny" id="rp-pick-stop" type="button">Pick stop on chart</button>
+      <button class="btn ghost tiny" id="rp-pick-tgt" type="button">Pick target on chart</button>
+      <span class="note" id="rp-pickMsg" style="margin:0"></span>
+    </div>
+    <div class="note">Once a level is set it also becomes a line on the chart — drag it directly to
+      adjust, before or after the trade is live.</div>
     <div class="strip" id="rp-levelAmounts" style="margin-top:10px"></div>
     <div class="grid g3" id="rp-tags" style="margin-top:12px"></div>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -4558,6 +4602,8 @@ $('rp-new').addEventListener('click', function () {
   sessionLedger = [];
   rpChatHistory = [];   // new session, new chart — stale chat context would be misleading
   if (typeof rpChatRender === 'function') rpChatRender();
+  rpUserDrawings = []; rpDrawStart = null; rpDragKind = null; rpSetPickMode(null);
+  if (rpTool !== 'none') rpSetTool(rpTool);   // reset the armed tool's button/cursor state too
   $('rp-msg').innerHTML = '<span class="pos">Session open. Seed ' + sess.cfg.seed +
     ' — note it if you want to replay this exact slice.</span>';
   ['rp-play', 'rp-step', 'rp-end', 'rp-goto-ny', 'rp-goto-ln', 'rp-goto-nd'].forEach(function (id) { $(id).disabled = false; });
@@ -4770,6 +4816,14 @@ function rpSizePreview() {
  */
 var RPCharts = (function () {
   var panes = {}; // paneKey -> { chart, series, fvg, priceLines: [] }
+  // User-adjustable candle theme, shared by every pane (Replay, Practice Arena,
+  // Prop Challenge) so one settings panel controls candle color everywhere a
+  // chart renders. Defaults match the colors this app shipped with originally.
+  var theme = {
+    upColor: '#22c55e', downColor: '#ef4444',
+    wickUpColor: '#22c55e', wickDownColor: '#ef4444', wickVisible: true,
+    borderUpColor: '#22c55e', borderDownColor: '#ef4444', borderVisible: false,
+  };
 
   /** Custom series primitive: shaded price-range boxes for open FVGs.
    *  Lightweight Charts calls updateAllViews() before every repaint (pan,
@@ -4819,7 +4873,69 @@ var RPCharts = (function () {
     };
   }
 
-  function ensure(paneKey, containerId, h) {
+  /** onCreate(pane) fires once, only the first time this paneKey is actually
+   *  created (never on a cache hit) — the hook a caller uses to wire one-time
+   *  chart interactions (click/drag) without double-attaching listeners. */
+  /** Custom series primitive: user-drawn trendlines, rectangles, and single-point
+   *  markers (e.g. a rejection wick). Generalizes fvgPrimitive's coordinate-recompute-
+   *  on-every-repaint approach so hand-drawn shapes stay glued to their bars/prices
+   *  through pan and zoom exactly like the auto-detected FVG boxes do. */
+  function drawingsPrimitive() {
+    var raw = [], computed = [], chartRef = null, seriesRef = null;
+    var pv = {
+      update: function () {
+        computed = [];
+        if (!chartRef || !seriesRef) return;
+        var ts = chartRef.timeScale();
+        raw.forEach(function (d) {
+          computed.push({
+            type: d.type, color: d.color, label: d.label,
+            x1: ts.timeToCoordinate(d.t1), x2: ts.timeToCoordinate(d.t2),
+            y1: seriesRef.priceToCoordinate(d.p1), y2: seriesRef.priceToCoordinate(d.p2),
+          });
+        });
+      },
+      renderer: function () {
+        var data = computed;
+        return {
+          draw: function (target) {
+            target.useBitmapCoordinateSpace(function (scope) {
+              var ctx = scope.context, hr = scope.horizontalPixelRatio, vr = scope.verticalPixelRatio;
+              data.forEach(function (d) {
+                if (d.x1 == null || d.x2 == null || d.y1 == null || d.y2 == null) return;
+                if (d.type === 'rect') {
+                  var x = Math.min(d.x1, d.x2) * hr, w = Math.max(1, Math.abs(d.x2 - d.x1) * hr);
+                  var y = Math.min(d.y1, d.y2) * vr, h2 = Math.max(1, Math.abs(d.y2 - d.y1) * vr);
+                  ctx.fillStyle = d.color + '33'; ctx.fillRect(x, y, w, h2);
+                  ctx.strokeStyle = d.color; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, w, h2);
+                } else if (d.type === 'marker') {
+                  var mx = d.x1 * hr, my = d.y1 * vr, s = 6 * hr;
+                  ctx.fillStyle = d.color;
+                  ctx.beginPath(); ctx.moveTo(mx, my - s); ctx.lineTo(mx - s, my + s); ctx.lineTo(mx + s, my + s);
+                  ctx.closePath(); ctx.fill();
+                } else { // trendline
+                  ctx.strokeStyle = d.color; ctx.lineWidth = 1.75;
+                  ctx.beginPath(); ctx.moveTo(d.x1 * hr, d.y1 * vr); ctx.lineTo(d.x2 * hr, d.y2 * vr); ctx.stroke();
+                }
+                if (d.label) {
+                  ctx.fillStyle = d.color; ctx.font = (10 * vr) + 'px ui-monospace,monospace';
+                  ctx.fillText(d.label, Math.min(d.x1, d.x2) * hr + 3, Math.min(d.y1, d.y2) * vr - 4);
+                }
+              });
+            });
+          }
+        };
+      }
+    };
+    return {
+      updateAllViews: function () { pv.update(); },
+      paneViews: function () { return [pv]; },
+      attached: function (params) { chartRef = params.chart; seriesRef = params.series; },
+      setShapes: function (shapes) { raw = shapes || []; }
+    };
+  }
+
+  function ensure(paneKey, containerId, h, onCreate) {
     if (panes[paneKey]) return panes[paneKey];
     var el = $(containerId); if (!el) return null;
     var chart = LightweightCharts.createChart(el, {
@@ -4831,15 +4947,24 @@ var RPCharts = (function () {
       timeScale: { borderColor: '#232b42', timeVisible: true, secondsVisible: false },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     });
-    var series = chart.addCandlestickSeries({
-      upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
-      wickUpColor: '#22c55e', wickDownColor: '#ef4444',
-    });
+    var series = chart.addCandlestickSeries(Object.assign({}, theme));
     var fvg = fvgPrimitive();
     series.attachPrimitive(fvg);
-    panes[paneKey] = { chart: chart, series: series, fvg: fvg, priceLines: [] };
+    var draw = drawingsPrimitive();
+    series.attachPrimitive(draw);
+    panes[paneKey] = { chart: chart, series: series, fvg: fvg, draw: draw, priceLines: [] };
+    if (typeof onCreate === 'function') onCreate(panes[paneKey]);
     return panes[paneKey];
   }
+
+  /** Applies a new theme to every pane that already exists (Replay's LTF/HTF,
+   *  Practice Arena, Prop Challenge — whichever have been created this
+   *  session) and remembers it so panes created afterward pick it up too. */
+  function setTheme(t) {
+    theme = Object.assign({}, theme, t || {});
+    Object.keys(panes).forEach(function (k) { panes[k].series.applyOptions(theme); });
+  }
+  function getTheme() { return Object.assign({}, theme); }
 
   function clearLines(pane) {
     pane.priceLines.forEach(function (l) { try { pane.series.removePriceLine(l); } catch (e) {} });
@@ -4857,11 +4982,280 @@ var RPCharts = (function () {
   function clear(paneKey) {
     var pane = panes[paneKey]; if (!pane) return;
     pane.series.setData([]); pane.series.setMarkers([]); pane.fvg.setBoxes([]);
+    pane.draw.setShapes([]);
     clearLines(pane);
   }
+  function setDrawings(paneKey, shapes) {
+    var pane = panes[paneKey]; if (!pane) return;
+    pane.draw.setShapes(shapes);
+  }
+  function getPane(paneKey) { return panes[paneKey] || null; }
 
-  return { ensure: ensure, clearLines: clearLines, addLine: addLine, clear: clear };
+  return { ensure: ensure, clearLines: clearLines, addLine: addLine, clear: clear,
+           setTheme: setTheme, getTheme: getTheme, setDrawings: setDrawings, getPane: getPane };
 })();
+
+/* ---------------------------------------------------------------- */
+/* CHART APPEARANCE — candle colors, applied globally via RPCharts    */
+/* ---------------------------------------------------------------- */
+var CHART_THEME_DEFAULT = {
+  upColor: '#22c55e', downColor: '#ef4444',
+  wickUpColor: '#22c55e', wickDownColor: '#ef4444', wickVisible: true,
+  borderUpColor: '#22c55e', borderDownColor: '#ef4444', borderVisible: false,
+};
+function rpChartTheme() { return Object.assign({}, CHART_THEME_DEFAULT, state.chartTheme || {}); }
+function rpSyncThemeInputs() {
+  var t = rpChartTheme();
+  $('cc-upcolor').value = t.upColor; $('cc-downcolor').value = t.downColor;
+  $('cc-wickup').value = t.wickUpColor; $('cc-wickdown').value = t.wickDownColor;
+  $('cc-borderup').value = t.borderUpColor; $('cc-borderdown').value = t.borderDownColor;
+  $('cc-bordervisible').checked = !!t.borderVisible;
+  $('cc-wickvisible').checked = t.wickVisible !== false;
+}
+function rpSetThemeField(key, val) {
+  state.chartTheme = rpChartTheme();
+  state.chartTheme[key] = val;
+  RPCharts.setTheme(state.chartTheme);
+  state.savedAt = null; cacheSave();
+}
+[['cc-upcolor', 'upColor'], ['cc-downcolor', 'downColor'], ['cc-wickup', 'wickUpColor'],
+ ['cc-wickdown', 'wickDownColor'], ['cc-borderup', 'borderUpColor'], ['cc-borderdown', 'borderDownColor']]
+  .forEach(function (pair) {
+    $(pair[0]) && $(pair[0]).addEventListener('input', function () { rpSetThemeField(pair[1], $(pair[0]).value); });
+  });
+[['cc-bordervisible', 'borderVisible'], ['cc-wickvisible', 'wickVisible']].forEach(function (pair) {
+  $(pair[0]) && $(pair[0]).addEventListener('change', function () { rpSetThemeField(pair[1], $(pair[0]).checked); });
+});
+$('cc-reset') && $('cc-reset').addEventListener('click', function () {
+  state.chartTheme = Object.assign({}, CHART_THEME_DEFAULT);
+  RPCharts.setTheme(state.chartTheme);
+  rpSyncThemeInputs();
+  state.savedAt = null; cacheSave();
+});
+
+/* ---------------------------------------------------------------- */
+/* CLICK-TO-SET AND DRAG-TO-ADJUST STOP / TARGET                     */
+/*                                                                    */
+/* Two interactions, unified around the same two price lines the      */
+/* order card already draws: "Pick on chart" arms a one-shot click     */
+/* (chart.subscribeClick) that writes straight into rp-stop/rp-tgt,    */
+/* exactly like typing a number. Once a line exists — pre-entry from   */
+/* those inputs, or post-entry from sess.position — grabbing it near    */
+/* its pixel row and moving the mouse (subscribeCrosshairMove, gated    */
+/* by a native mousedown/mouseup pair on the chart's own element,       */
+/* since Lightweight Charts has no built-in drag API) adjusts it live.  */
+/* Post-entry stop drags are committed through RP.moveStop so the same  */
+/* validation and movedStop bookkeeping applies as the existing         */
+/* "Stop to breakeven" button; target has no RP mutator, so it is       */
+/* written directly onto sess.position.target the same way every other  */
+/* reader in this file already treats it as a plain mutable field.      */
+/* ---------------------------------------------------------------- */
+var rpPickMode = null;   // 'stop' | 'target' | null
+var rpDragKind = null;   // 'stop' | 'target' | null — set only while the mouse is down on a line
+
+function rpSetPickMode(mode) {
+  rpPickMode = rpPickMode === mode ? null : mode;
+  $('rp-pick-stop').classList.toggle('ghost', rpPickMode !== 'stop');
+  $('rp-pick-tgt').classList.toggle('ghost', rpPickMode !== 'target');
+  $('rp-pickMsg').textContent = rpPickMode ? 'Click a price on the chart to set the ' + rpPickMode + '.' : '';
+}
+$('rp-pick-stop') && $('rp-pick-stop').addEventListener('click', function () { rpSetPickMode('stop'); });
+$('rp-pick-tgt') && $('rp-pick-tgt').addEventListener('click', function () { rpSetPickMode('target'); });
+
+function rpRedrawOrderLines() {
+  var pane = RPCharts.getPane('ltf'); if (!pane) return;
+  RPCharts.clearLines(pane);
+  var p = sess && sess.position;
+  if (p) {
+    RPCharts.addLine(pane, p.entry, '#e9edf7', 'entry ' + p.entry.toFixed(2), false);
+    RPCharts.addLine(pane, p.stop, '#ef4444', 'stop ' + p.stop.toFixed(2), true);
+    if (Number.isFinite(p.target)) RPCharts.addLine(pane, p.target, '#22c55e', 'target ' + p.target.toFixed(2), true);
+  } else {
+    RPCharts.addLine(pane, numv($('rp-stop').value), '#ef4444', 'stop', true);
+    RPCharts.addLine(pane, numv($('rp-tgt').value), '#22c55e', 'target', true);
+  }
+}
+
+function rpApplyDragPrice(kind, price) {
+  if (sess && sess.position) {
+    var p = sess.position;
+    if (kind === 'stop') {
+      var wrongStop = p.side === 'long' ? price >= p.entry : price <= p.entry;
+      if (wrongStop) return;
+      p.stop = price;
+    } else {
+      var wrongTgt = p.side === 'long' ? price <= p.entry : price >= p.entry;
+      if (wrongTgt) return;
+      p.target = price;
+    }
+  } else {
+    var id = kind === 'stop' ? 'rp-stop' : 'rp-tgt';
+    $(id).value = price.toFixed(2);
+    $(id).dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  rpRedrawOrderLines();
+}
+
+function rpCommitDrag(kind) {
+  if (sess && sess.position && kind === 'stop') {
+    var r = RP.moveStop(sess, sess.position.stop);
+    $('rp-orderMsg').innerHTML = r.ok ? '<span class="mut">Stop moved by drag. Logged as movedstop.</span>'
+      : '<span class="excl">' + esc(r.reason) + '</span>';
+  }
+  rpRender();
+}
+document.addEventListener('mouseup', function () {
+  if (rpDragKind) { rpCommitDrag(rpDragKind); rpDragKind = null; }
+});
+
+/** One-time setup for the LTF pane only — fires from RPCharts.ensure's
+ *  onCreate hook, so these listeners attach exactly once no matter how
+ *  many times rpDrawPane() re-runs. */
+function rpWireLtfInteractions(pane) {
+  pane.chart.subscribeClick(function (param) {
+    if (!rpPickMode || !param.point || !sess || sess.position) return;
+    var price = pane.series.coordinateToPrice(param.point.y);
+    if (price == null) return;
+    var id = rpPickMode === 'stop' ? 'rp-stop' : 'rp-tgt';
+    $(id).value = price.toFixed(2);
+    $(id).dispatchEvent(new Event('input', { bubbles: true }));
+    rpSetPickMode(null);
+    rpRedrawOrderLines();
+  });
+
+  var el = pane.chart.chartElement();
+  el.addEventListener('mousedown', function (e) {
+    if (!sess) return;
+    var rect = el.getBoundingClientRect();
+    var y = e.clientY - rect.top;
+    var p = sess.position;
+    var stopPrice = p ? p.stop : numv($('rp-stop').value);
+    var tgtPrice = p ? p.target : numv($('rp-tgt').value);
+    var stopY = Number.isFinite(stopPrice) ? pane.series.priceToCoordinate(stopPrice) : null;
+    var tgtY = Number.isFinite(tgtPrice) ? pane.series.priceToCoordinate(tgtPrice) : null;
+    var TOL = 6;
+    if (stopY != null && Math.abs(stopY - y) <= TOL) { rpDragKind = 'stop'; e.preventDefault(); }
+    else if (tgtY != null && Math.abs(tgtY - y) <= TOL) { rpDragKind = 'target'; e.preventDefault(); }
+  });
+
+  pane.chart.subscribeCrosshairMove(function (param) {
+    if (!rpDragKind || !param.point || !sess) return;
+    var price = pane.series.coordinateToPrice(param.point.y);
+    if (price != null) rpApplyDragPrice(rpDragKind, price);
+  });
+
+  rpWireDrawingTool(pane);
+}
+
+/* ---------------------------------------------------------------- */
+/* DRAWING TOOLS — trendline, rectangle, rejection marker             */
+/*                                                                    */
+/* Shapes live only for the current Replay session (cleared on a new   */
+/* session, same lifetime as the chat panel's history) — they're tied  */
+/* to bars that a fresh session replaces entirely, so persisting them   */
+/* past that point would just be stale annotations on the wrong chart.  */
+/* ---------------------------------------------------------------- */
+var rpTool = 'none';
+var rpUserDrawings = [];
+var rpDrawStart = null;   // {t, price} while a trendline/rectangle is being dragged out
+
+var TOOL_COLORS = { trend: '#eab308', rect: '#818cf8', marker: '#ef4444' };
+
+function rpSetTool(tool) {
+  rpTool = rpTool === tool ? 'none' : tool;
+  ['none', 'trend', 'rect', 'marker'].forEach(function (t) {
+    $('rp-tool-' + (t === 'none' ? 'none' : t)).classList.toggle('ghost', rpTool !== t);
+  });
+  var pane = RPCharts.getPane('ltf');
+  if (pane) pane.chart.chartElement().style.cursor = rpTool === 'none' ? 'default' : 'crosshair';
+  $('rp-toolNote').textContent = rpTool === 'none' ? '' :
+    rpTool === 'marker' ? 'Click a bar to drop a rejection marker.' :
+    'Click a start point, then click again to finish the ' + (rpTool === 'trend' ? 'trendline' : 'rectangle') + '.';
+}
+['none', 'trend', 'rect', 'marker'].forEach(function (t) {
+  var btn = $('rp-tool-' + t);
+  btn && btn.addEventListener('click', function () { rpSetTool(t); });
+});
+$('rp-clear-drawings') && $('rp-clear-drawings').addEventListener('click', function () {
+  rpUserDrawings = [];
+  rpRedrawDrawings(RPCharts.getPane('ltf'), null);
+});
+$('rp-killzones') && $('rp-killzones').addEventListener('change', function () { rpDraw(); });
+
+function rpWireDrawingTool(pane) {
+  pane.chart.subscribeClick(function (param) {
+    if (rpTool === 'none' || !param.point || !sess) return;
+    var price = pane.series.coordinateToPrice(param.point.y);
+    var time = param.time;
+    if (price == null || time == null) return;
+
+    if (rpTool === 'marker') {
+      rpUserDrawings.push({ type: 'marker', t1: time, p1: price, t2: time, p2: price,
+        color: TOOL_COLORS.marker, label: 'rejection' });
+      rpRedrawDrawings(pane, null);
+      return;
+    }
+    if (!rpDrawStart) {
+      rpDrawStart = { t: time, p: price };
+      $('rp-toolNote').textContent = 'Click the end point to finish the ' +
+        (rpTool === 'trend' ? 'trendline' : 'rectangle') + '.';
+      return;
+    }
+    rpUserDrawings.push({
+      type: rpTool === 'trend' ? 'trend' : 'rect',
+      t1: rpDrawStart.t, p1: rpDrawStart.p, t2: time, p2: price,
+      color: TOOL_COLORS[rpTool] || '#818cf8'
+    });
+    rpDrawStart = null;
+    rpRedrawDrawings(pane, null);
+    $('rp-toolNote').textContent = 'Click a start point, then click again to finish the ' +
+      (rpTool === 'trend' ? 'trendline' : 'rectangle') + '.';
+  });
+}
+
+// NY-local-time kill zone windows, expressed as fixed (non-DST-adjusted) UTC
+// hours — same honest simplification KILLZONE_UTC above already discloses:
+// the US and UK don't shift clocks on the same date, so real UTC boundaries
+// drift by up to an hour around late Oct and mid/late March. NY AM in
+// particular has no single agreed start/end across ICT sources (documented
+// spread: 7:00-10:00 vs 8:30-11:00 vs 7:00-9:00 NY) — the range below is the
+// most-cited outer bound, not a claimed precise standard.
+var KILLZONE_BANDS = [
+  { key: 'asian', label: 'Asian KZ', fromUtc: 1, toUtc: 5, color: '#8b96b3' },
+  { key: 'london', label: 'London KZ', fromUtc: 7, toUtc: 10, color: '#22d3ee' },
+  { key: 'nyam', label: 'NY AM KZ', fromUtc: 12, toUtc: 15, color: '#6366f1' },
+  { key: 'silverbullet', label: 'Silver Bullet', fromUtc: 15, toUtc: 16, color: '#b45cff' },
+  { key: 'londonclose', label: 'London Close KZ', fromUtc: 15, toUtc: 17, color: '#eab308' },
+];
+
+function rpKillzoneShapes(view) {
+  if (!$('rp-killzones') || !$('rp-killzones').checked || !view.length) return [];
+  var lo = Infinity, hi = -Infinity;
+  view.forEach(function (b) { if (b.l < lo) lo = b.l; if (b.h > hi) hi = b.h; });
+  if (!isFinite(lo) || !isFinite(hi)) return [];
+  var pad = (hi - lo) * 0.02 || 1;
+  lo -= pad; hi += pad;
+  var out = [];
+  var startDay = new Date(view[0].t); startDay.setUTCHours(0, 0, 0, 0);
+  var endDay = new Date(view[view.length - 1].t);
+  for (var d = startDay.getTime(); d <= endDay.getTime() + 86400000; d += 86400000) {
+    KILLZONE_BANDS.forEach(function (z) {
+      var from = d + z.fromUtc * 3600000, to = d + z.toUtc * 3600000;
+      if (to < view[0].t || from > view[view.length - 1].t) return;
+      out.push({
+        type: 'rect', t1: Math.floor(from / 1000), t2: Math.floor(to / 1000), p1: lo, p2: hi,
+        color: z.color
+      });
+    });
+  }
+  return out;
+}
+
+function rpRedrawDrawings(pane, view) {
+  if (!pane) return;
+  var kz = view ? rpKillzoneShapes(view) : [];
+  RPCharts.setDrawings('ltf', kz.concat(rpUserDrawings));
+}
 
 function rpDrawPane(containerId, tfMin, paneH, opts) {
   opts = opts || {};
@@ -4881,7 +5275,7 @@ function rpDrawPane(containerId, tfMin, paneH, opts) {
   if (emptyEl) emptyEl.style.display = 'none';
   if (!tfMin) return; // HTF pane turned off — caller hides the container
 
-  var pane = RPCharts.ensure(paneKey, containerId, paneH);
+  var pane = RPCharts.ensure(paneKey, containerId, paneH, isLtf ? rpWireLtfInteractions : undefined);
   if (!pane) return;
 
   var series = RP.chart(sess, tfMin);
@@ -4967,6 +5361,8 @@ function rpDrawPane(containerId, tfMin, paneH, opts) {
   markers.sort(function (a, b) { return a.time - b.time; });
   pane.series.setMarkers(markers);
 
+  if (isLtf) rpRedrawDrawings(pane, view);
+
   if (stampL) {
     var t0 = new Date(view[0].t);
     stampL.textContent = sess.closed || !sess.cfg.blind
@@ -5006,6 +5402,12 @@ function rpRender() {
   var p = sess.position;
   $('rp-be').disabled = !p || sess.closed;
   $('rp-flat').disabled = !p || sess.closed;
+  // Picking a NEW stop/target only makes sense pre-entry — once live, dragging
+  // the already-visible line is the interaction (post-entry stop drags still
+  // run through RP.moveStop; see rpApplyDragPrice/rpCommitDrag).
+  $('rp-pick-stop').disabled = !!p || sess.closed;
+  $('rp-pick-tgt').disabled = !!p || sess.closed;
+  if (p && rpPickMode) rpSetPickMode(null);
   ['rp-goto-ny', 'rp-goto-ln', 'rp-goto-nd'].forEach(function (id) {
     $(id).disabled = !!p || sess.closed;   // can't fast-forward past a trade you're managing
   });
@@ -5847,6 +6249,8 @@ function authInit() {
 }
 
 cacheLoad();
+RPCharts.setTheme(rpChartTheme());   // must run after cacheLoad — reads state.chartTheme
+rpSyncThemeInputs();
 buildTagFields();
 rpInit();
 $('f-date').value = new Date().toISOString().slice(0, 10);
