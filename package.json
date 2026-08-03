@@ -1,0 +1,7 @@
+{
+  "name": "profxtrading",
+  "private": true,
+  "version": "1.0.0",
+  "description": "ProFX Trading — deterministic edge lab with AI coaching, cloud sync, and subscriptions.",
+  "engines": { "node": ">=20" }
+}
