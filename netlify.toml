@@ -4,6 +4,16 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  # SUPABASE_URL and SUPABASE_ANON_KEY are also set as Netlify env vars (for the
+  # Netlify Functions that need them) but are intentionally hardcoded in app.html
+  # too — Supabase's anon/publishable key is designed to be public client-side;
+  # Row Level Security is what actually protects data, not hiding this value.
+  # Netlify's secret scanner doesn't know that and fails the build the moment it
+  # sees an env var's value inside the deployed bundle. Omit just these two by
+  # name so scanning stays ON for every real secret (STRIPE_SECRET_KEY,
+  # ANTHROPIC_API_KEY, DATABENTO_API_KEY, ALPHAVANTAGE_API_KEY,
+  # SUPABASE_SERVICE_ROLE_KEY, STRIPE_WEBHOOK_SECRET).
+  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_URL,SUPABASE_ANON_KEY"
 
 [[redirects]]
   from = "/profxtrading.html"
