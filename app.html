@@ -241,6 +241,20 @@
     .row{grid-template-columns:1fr;gap:2px}.meta{text-align:left}
   }
   @media print{.sidebar,.mobile-top,nav,.noprint{display:none}main{padding:0}}
+
+  /* ---------- courses (weekly track) ---------- */
+  .week-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:16px 18px;margin-bottom:14px}
+  .week-card.locked{opacity:.5;pointer-events:none;user-select:none}
+  .week-card.focus{border-color:var(--accent2);box-shadow:0 0 0 1px rgba(34,211,238,.25)}
+  .week-head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px}
+  .week-head h3{margin:0;font-size:14.5px;font-weight:800;letter-spacing:-.01em}
+  .progress-track{background:var(--bg2);border:1px solid var(--border);border-radius:99px;height:10px;
+    overflow:hidden;margin-top:10px}
+  .progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));
+    border-radius:99px;transition:width .25s ease}
+  .lesson-read-row{display:flex;align-items:center;gap:8px;cursor:pointer}
+  .lesson-read-row input{width:auto;margin:0;accent-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -288,6 +302,11 @@
     <button role="tab" data-tab="desk" aria-selected="false"><span class="ic">◍</span>Session desk</button>
     <div class="nav-label">You</div>
     <button role="tab" data-tab="profile" aria-selected="false"><span class="ic">☉</span>Profile &amp; stats</button>
+    <div class="nav-label">Level up</div>
+    <button role="tab" data-tab="courses" aria-selected="false"><span class="ic">▣</span>Courses</button>
+    <button role="tab" data-tab="games" aria-selected="false"><span class="ic">◎</span>Practice Arena</button>
+    <button role="tab" data-tab="progress" aria-selected="false"><span class="ic">◆</span>Progress</button>
+    <button role="tab" data-tab="challenge" aria-selected="false"><span class="ic">⛨</span>Prop Challenge</button>
   </nav>
 </aside>
 
@@ -735,6 +754,17 @@
   <div id="p-lessons"></div>
 </section>
 
+<!-- ───────────────────────────── COURSES ───────────────────────────── -->
+<section id="tab-courses" hidden>
+  <h2>Foundational Track</h2>
+  <div class="card" id="crs-focus"></div>
+  <div class="card" id="crs-progress" style="margin-top:12px"></div>
+  <div class="note">Lessons and drills already exist in the Professor tab — this is the pacing layer on
+    top of them: a fixed weekly order, a lock on getting ahead of yourself, and one line telling you why
+    the order below is the order it is.</div>
+  <div id="crs-weeks" style="margin-top:14px"></div>
+</section>
+
 <!-- ───────────────────────────── DESK ───────────────────────────── -->
 <section id="tab-desk" hidden>
   <h2>Session card — <span id="d-date"></span></h2>
@@ -800,6 +830,215 @@
       <div class="note" id="pf-syncStatus" style="margin:0">—</div>
       <button class="btn ghost" style="margin-top:10px" id="pf-syncNowBtn">Sync now</button>
     </div>
+  </div>
+</section>
+
+<!-- ───────────────────────────── PRACTICE ARENA ───────────────────────────── -->
+<section id="tab-games" hidden>
+  <h2>Structure Sniper</h2>
+  <div class="card">
+    <div class="note" style="margin:0 0 10px">Every round is graded against <b>Structure.analyze()</b> —
+      the same deterministic fair-value-gap / break-of-structure / liquidity-sweep detector the Replay tab
+      uses to mark up charts. Nothing here is authored by hand and nothing is judged by a model: the engine
+      computes the real answer from the bars, and your pick is checked against it instantly.</div>
+    <div class="grid g4">
+      <div><label for="gm-src">Bar source</label><select id="gm-src">
+        <option value="synthetic" selected>Synthetic (seeded)</option>
+        <option value="replay">My loaded bars (Replay tab)</option>
+      </select></div>
+      <div><label for="gm-diff">Difficulty</label><select id="gm-diff">
+        <option value="easy">Easy — 3 candidates, wide view</option>
+        <option value="medium" selected>Medium — 4 candidates</option>
+        <option value="hard">Hard — 5 candidates, tight view</option>
+      </select></div>
+      <div><label for="gm-seed">Seed <span class="mut">optional — blank = random each round</span></label>
+        <input id="gm-seed" placeholder="auto"></div>
+      <div><label>&nbsp;</label><button class="btn" id="gm-newround" style="width:100%">Start round 1</button></div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap">
+      <label class="check" style="margin:0;border:0;padding:0">
+        <input type="checkbox" id="gm-t-fvg" checked> <span style="font-size:12px;color:var(--muted)">Fair value gaps</span>
+      </label>
+      <label class="check" style="margin:0;border:0;padding:0">
+        <input type="checkbox" id="gm-t-break" checked> <span style="font-size:12px;color:var(--muted)">Breaks of structure (BOS/CHoCH)</span>
+      </label>
+      <label class="check" style="margin:0;border:0;padding:0">
+        <input type="checkbox" id="gm-t-sweep" checked> <span style="font-size:12px;color:var(--muted)">Liquidity sweeps</span>
+      </label>
+    </div>
+    <div class="note" id="gm-srcNote" style="margin-top:10px"></div>
+  </div>
+
+  <h2>Round <span class="note" id="gm-ident"></span></h2>
+  <div class="card" style="padding:8px">
+    <div style="position:relative">
+      <div id="gm-canvas" style="width:100%;height:340px"></div>
+      <div id="gm-canvas-empty" class="note" style="position:absolute;left:14px;top:10px;margin:0;pointer-events:none">Click "Start round 1" above to deal a chart.</div>
+    </div>
+  </div>
+  <div class="card drill" id="gm-drill" style="margin-top:12px"></div>
+
+  <h2>Session score</h2>
+  <div class="strip" id="gm-score"></div>
+  <div class="note">Streak is consecutive correct rounds. Reset the session any time — nothing here is
+    saved to your ledger; it's practice, not a trade.</div>
+</section>
+
+<section id="tab-progress" hidden>
+  <h2>Progress</h2>
+  <div class="note" style="margin:0 0 14px">Every tier below is gated on your own ledger, computed the same way
+    everywhere else in this app: EdgeEngine's permutation test + Benjamini-Hochberg FDR correction + walk-forward
+    split decide "confirmed rule", and Replay's own confluence gate decides "followed the rules." Logging more
+    trades does not move this number by itself — only trades that clear those bars do. See "How tiers are
+    computed" below for the exact arithmetic.</div>
+
+  <div class="card" id="pg-tierCard"></div>
+
+  <h2>Streak — realized R vs planned R</h2>
+  <div class="note" style="margin:0 0 10px">Consecutive Replay sessions, oldest to newest, where your average
+    realized R across trades that had a target met or beat your average planned R for that session — i.e. you
+    stopped cutting winners short. Source: Replay's own <code>sessionSummary()</code> — <code>avgPlannedR</code>
+    and <code>avgRealizedOfPlanned</code> read directly, never recomputed.</div>
+  <div class="strip" id="pg-streak"></div>
+  <div class="card" id="pg-sessions" style="margin-top:10px"></div>
+
+  <h2>Drill mastery <span class="mut" id="pg-drillNote" style="font-weight:400"></span></h2>
+  <div class="card" id="pg-drills"></div>
+
+  <h2>How tiers are computed</h2>
+  <div class="card" id="pg-explain"></div>
+</section>
+
+<section id="tab-challenge" hidden>
+  <h2><span class="tag" style="margin:0 8px 0 0">1</span>Choose a challenge</h2>
+  <div class="card">
+    <div class="grid g4">
+      <div><label for="chal-preset">Preset</label><select id="chal-preset">
+        <option value="eval50k" selected>$50k Evaluation — 8% target · 5% daily loss · 10% trailing DD</option>
+        <option value="combine50k">$50k Funded Combine — 6% target · 3% daily loss · 4% static max DD</option>
+        <option value="custom">Custom numbers</option>
+      </select></div>
+      <div><label for="chal-equity">Account size ($)</label><input id="chal-equity" value="50000" inputmode="decimal" disabled></div>
+      <div><label for="chal-target">Profit target (%)</label><input id="chal-target" value="8" inputmode="decimal" disabled></div>
+      <div><label for="chal-daily">Daily loss limit (%)</label><input id="chal-daily" value="5" inputmode="decimal" disabled></div>
+      <div><label for="chal-dd">Max drawdown (%)</label><input id="chal-dd" value="10" inputmode="decimal" disabled></div>
+      <div><label for="chal-ddmode">Drawdown type</label><select id="chal-ddmode" disabled>
+        <option value="trailing" selected>Trailing (off peak equity)</option>
+        <option value="static">Static (off starting balance)</option>
+      </select></div>
+    </div>
+    <div class="note" id="chal-presetNote" style="margin-top:6px"></div>
+  </div>
+
+  <h2><span class="tag" style="margin:0 8px 0 0">2</span>Load a market</h2>
+  <div class="card">
+    <div class="note" style="margin:0 0 10px">Uses the exact same bar loader as Replay — no second engine. If a
+      market or CSV is already loaded over on the Replay tab, pull it in directly instead of loading twice.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn ghost tiny" id="chal-useReplayBars">Use bars loaded in Replay tab</button>
+      <span class="note" id="chal-dataInfo" style="margin:0" aria-live="polite">No bar file loaded.</span>
+    </div>
+  </div>
+  <div class="drop" id="chal-drop" tabindex="0" role="button" style="margin-top:12px">
+    Or drop an OHLCV CSV — TradingView chart export, or any file with time/open/high/low/close columns.
+    Use the lowest timeframe you have; higher ones are built from it.
+  </div>
+
+  <h2><span class="tag" style="margin:0 8px 0 0">3</span>Start the challenge</h2>
+  <div class="card">
+    <div class="grid g4">
+      <div><label for="chal-inst">Instrument</label><select id="chal-inst"></select></div>
+      <div><label for="chal-tf">Chart timeframe</label><select id="chal-tf">
+        <option value="1">1m</option><option value="5" selected>5m</option>
+        <option value="15">15m</option><option value="60">1h</option><option value="240">4h</option>
+      </select></div>
+      <div><label for="chal-lookback">History before you start</label><select id="chal-lookback">
+        <option value="0.25">6 hours</option>
+        <option value="1">1 day</option>
+        <option value="3" selected>3 days</option>
+        <option value="5">1 week</option>
+        <option value="10">2 weeks</option>
+      </select></div>
+      <div><label for="chal-sessionlen">Challenge window</label><select id="chal-sessionlen">
+        <option value="5">1 week</option>
+        <option value="10" selected>2 weeks</option>
+        <option value="20">1 month</option>
+        <option value="40">2 months</option>
+      </select></div>
+      <div><label for="chal-risk">Risk per trade (%)</label><input id="chal-risk" value="0.5" inputmode="decimal"></div>
+      <div><label for="chal-seed">Seed <span class="mut">blank = random</span></label><input id="chal-seed" placeholder="auto"></div>
+      <div><label for="chal-blind">Mode</label><select id="chal-blind">
+        <option value="1" selected>Blind — sealed random start</option>
+        <option value="0">Open — start at the beginning</option>
+      </select></div>
+      <div><label>&nbsp;</label><button class="btn" id="chal-new" style="width:100%">Start challenge</button></div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn ghost" id="chal-end" disabled>Abandon session</button>
+      <span class="note" id="chal-msg" aria-live="polite"></span>
+    </div>
+    <div class="note">"History before you start" and "Challenge window" are converted to bar counts using
+      whatever timeframe the loaded data actually is. A challenge needs a lot more bars than a single Replay
+      session — load a market/CSV with deep enough history, or the session will fail to start with an
+      explicit bar-count shortfall.</div>
+  </div>
+
+  <h2>Status</h2>
+  <div class="card" id="chal-banner">
+    <div class="note" style="margin:0">Configure a challenge above and start a session — status appears here.</div>
+  </div>
+  <div class="strip" id="chal-dash" style="margin-top:10px"></div>
+  <div class="note">Daily loss limit and max drawdown are both enforced against mark-to-market equity — an
+    open position's floating P&amp;L counts against you immediately, the same as at a real prop firm, not
+    only once it is realized at a close.</div>
+
+  <h2>Chart <span class="note" id="chal-ident"></span></h2>
+  <div class="card" style="padding:8px">
+    <div style="position:relative">
+      <div id="chal-canvas" style="width:100%;height:340px"></div>
+      <div id="chal-canvas-empty" class="note" style="position:absolute;left:14px;top:10px;margin:0;pointer-events:none">Load bars and start a challenge.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+      <button class="btn tiny" id="chal-play" disabled>Play</button>
+      <button class="btn ghost tiny" id="chal-step" disabled>Step ▸</button>
+      <label for="chal-speed" style="margin:0 0 0 6px">Speed</label>
+      <select id="chal-speed" style="width:auto">
+        <option value="1000">0.5x</option><option value="500" selected>1x</option>
+        <option value="200">2.5x</option><option value="100">5x</option><option value="50">10x</option>
+      </select>
+      <span class="note" id="chal-prog"></span>
+    </div>
+  </div>
+
+  <h2>Order</h2>
+  <div class="card">
+    <div class="grid g4">
+      <div><label for="chal-side">Side</label><select id="chal-side"><option value="short">Short</option><option value="long">Long</option></select></div>
+      <div><label for="chal-stop">Stop price</label><input id="chal-stop" inputmode="decimal"></div>
+      <div><label for="chal-tgt">Target price</label><input id="chal-tgt" inputmode="decimal"></div>
+      <div><label>Computed size</label><div class="v" id="chal-size" style="font-size:15px;padding-top:4px">—</div></div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn" id="chal-place" disabled>Place bracket</button>
+      <button class="btn ghost" id="chal-flat" disabled>Flatten at market</button>
+      <span class="note" id="chal-orderMsg" aria-live="polite"></span>
+    </div>
+  </div>
+
+  <h2>Open position</h2>
+  <div class="strip" id="chal-pos"></div>
+
+  <h2>Session log</h2>
+  <div class="scroll"><table id="chal-log"><thead><tr>
+    <th>Side</th><th class="num">Qty</th><th class="num">Entry</th><th class="num">Stop</th>
+    <th class="num">Exit</th><th class="num">Planned R</th><th class="num">Realized R</th>
+    <th class="num">MFE</th><th class="num">MAE</th><th>Exit reason</th>
+  </tr></thead><tbody><tr><td colspan="10" class="mut">No trades yet.</td></tr></tbody></table></div>
+
+  <h2>Result</h2>
+  <div class="card" id="chal-summary">
+    <div class="note" style="margin:0">Finishes — pass, fail, or ended early — show the full session summary
+      here, computed by the same Replay engine, not recomputed by hand.</div>
   </div>
 </section>
 
@@ -4863,7 +5102,7 @@ document.querySelectorAll('nav [role=tab]').forEach(function (b) {
   b.addEventListener('click', function () {
     document.querySelectorAll('nav [role=tab]').forEach(function (x) {
       x.setAttribute('aria-selected', String(x === b)); });
-    ['journal', 'bench', 'risk', 'replay', 'professor', 'desk', 'profile'].forEach(function (t) {
+    ['journal', 'bench', 'risk', 'replay', 'professor', 'desk', 'profile', 'courses', 'games', 'progress', 'challenge'].forEach(function (t) {
       $('tab-' + t).hidden = (t !== b.dataset.tab); });
     var mt = document.querySelector('.mobile-top .mtitle');
     if (mt) mt.textContent = b.textContent.trim();
@@ -5619,6 +5858,1032 @@ if (state.settings && state.settings.equity) {
 }
 recompute();
 authInit();
+
+/* ---------------------------------------------------------------- */
+/* COURSES — a week-structured Foundational Track built on top of    */
+/* the existing curriculum.js lessons/drills and the Leitner drill   */
+/* scheduler in lab.js. This adds only pacing, lock-progression, and */
+/* leak-driven personalization — it does not re-implement lessons,   */
+/* drills, or the drill scheduler.                                   */
+/* ---------------------------------------------------------------- */
+var COURSE_WEEKS = [
+  { title: 'Foundations', lessons: ['L01', 'L02'],
+    outcome: 'Grade every trade in R instead of dollars, and stop optimizing win rate at the expense of expectancy.' },
+  { title: 'Evidence', lessons: ['L03', 'L04'],
+    outcome: 'Tell a real pattern in your ledger from a coincidence, and know how many tests you actually ran to find it.' },
+  { title: 'Risk — Position Sizing', lessons: ['L05'],
+    outcome: 'Size positions from your own growth-optimal math, hard-capped so one bad estimate cannot end the account.' },
+  { title: 'Risk — Ruin & Drawdown', lessons: ['L06', 'L07'],
+    outcome: 'Quantify your probability of ruin from your own trade distribution and size for the drawdown you can survive, not the median one.' },
+  { title: 'Execution', lessons: ['L08'],
+    outcome: 'Price commissions and slippage in R and know which setups are too thin to survive costs.' },
+  { title: 'Psychology', lessons: ['L09', 'L10'],
+    outcome: 'Price your own discipline tax in dollars and grade a trading week on adherence, not P&L.' },
+  { title: 'Business', lessons: ['L11', 'L12'],
+    outcome: 'Size against a prop firm’s trailing drawdown and keep a ledger a CPA can actually use.' },
+];
+
+function crsLessonRead(id) {
+  var m = state.memory[id];
+  return !!(m && m.read);
+}
+
+function crsWeekDrills(week) {
+  return C.DRILLS.filter(function (d) { return week.lessons.indexOf(d.lesson) !== -1; });
+}
+
+/** allRead: every lesson in the week checked off. drillOk: no due drill from this
+ *  week is outstanding without at least one logged attempt. complete: both. */
+function crsWeekStatus(week, dueIds) {
+  var drills = crsWeekDrills(week);
+  var allRead = week.lessons.every(function (id) { return crsLessonRead(id); });
+  var hasDue = drills.some(function (d) { return dueIds[d.id]; });
+  var attempted = drills.some(function (d) { return state.memory[d.id] && state.memory[d.id].lastSeen; });
+  var drillOk = !hasDue || attempted;
+  return { allRead: allRead, drillOk: drillOk, complete: allRead && drillOk, hasDrills: drills.length > 0 };
+}
+
+function renderCourses() {
+  var ctx = { report: report, trades: tradesN, rs: rsAll };
+  var lessonsById = {};
+  C.forContext(ctx).forEach(function (l) { lessonsById[l.id] = l; });
+
+  var queue = L.scheduleDrills(C.DRILLS, state.memory, report);
+  var dueIds = {};
+  queue.forEach(function (d) { if (d.isDue) dueIds[d.id] = true; });
+
+  var statuses = COURSE_WEEKS.map(function (w) { return crsWeekStatus(w, dueIds); });
+  var unlocked = COURSE_WEEKS.map(function (w, i) { return i === 0 || statuses[i - 1].complete; });
+  var currentIdx = statuses.findIndex(function (s) { return !s.complete; });
+  if (currentIdx === -1) currentIdx = COURSE_WEEKS.length - 1;
+  var completeCount = statuses.filter(function (s) { return s.complete; }).length;
+
+  /* ---- personalization: report.leaks / report.confirmed read verbatim, ---- */
+  /* ---- never invented — same hard rule as the rest of the Professor. ---- */
+  var focusMsg, focusWeekIdx = -1;
+  var leak = (report && report.leaks && report.leaks.length) ? report.leaks[0] : null;
+  if (leak) {
+    var leakKey = leak.dimension.split('+')[0];
+    var matchDrill = C.DRILLS.filter(function (d) { return (d.tagKeys || []).indexOf(leakKey) !== -1; })[0];
+    if (matchDrill) {
+      focusWeekIdx = COURSE_WEEKS.findIndex(function (w) { return w.lessons.indexOf(matchDrill.lesson) !== -1; });
+    }
+    focusMsg = 'Your #1 leak right now is <b>' + esc(leak.dimension + ' = ' + leak.value) + '</b> at ' +
+      R(leak.expectancyR) + ' over ' + leak.n + ' trades — this week’s course below is picked to address it.';
+  } else if (report && report.confirmed && report.confirmed.length) {
+    focusMsg = 'Nothing is proven to be leaking yet — ' + report.confirmed.length +
+      ' condition' + (report.confirmed.length === 1 ? ' is' : 's are') +
+      ' confirmed instead. Not enough evidence yet to reorder the track, so working the default order below.';
+  } else {
+    focusMsg = 'Not enough logged trades yet to name a #1 leak — here’s the default order.';
+  }
+  $('crs-focus').innerHTML = '<div class="kicker">this week’s focus</div><div style="font-size:13px">' +
+    focusMsg + '</div>';
+
+  var pctDone = Math.round(completeCount / COURSE_WEEKS.length * 100);
+  $('crs-progress').innerHTML =
+    '<div class="week-head"><h3>Week ' + (currentIdx + 1) + ' of ' + COURSE_WEEKS.length + '</h3>' +
+    '<span class="mut" style="font-size:11.5px">' + completeCount + ' of ' + COURSE_WEEKS.length +
+    ' weeks complete</span></div>' +
+    '<div class="progress-track"><div class="progress-fill" style="width:' + pctDone + '%"></div></div>';
+
+  var html = COURSE_WEEKS.map(function (w, i) {
+    var s = statuses[i];
+    var isLocked = !unlocked[i];
+    var badge = isLocked ? '<span class="tag">locked</span>'
+      : s.complete ? '<span class="tag pos">complete</span>'
+      : '<span class="tag">in progress</span>';
+    var cls = 'week-card' + (isLocked ? ' locked' : '') + (i === focusWeekIdx ? ' focus' : '');
+    var body;
+    if (isLocked) {
+      body = '<div class="note" style="margin-top:10px">Complete Week ' + i + ' to unlock — ' +
+        w.lessons.map(function (id) { return lessonsById[id] ? esc(lessonsById[id].title) : id; }).join(', ') +
+        '.</div>';
+    } else {
+      var due = crsWeekDrills(w).filter(function (d) { return dueIds[d.id]; }).length;
+      body = w.lessons.map(function (id) {
+        var l = lessonsById[id]; if (!l) return '';
+        var read = crsLessonRead(id);
+        return '<details class="lesson"' + (read ? '' : ' open') + '><summary>' +
+          '<span class="lesson-read-row"><input type="checkbox" data-crs-read="' + esc(id) + '"' +
+          (read ? ' checked' : '') + '> <b>' + esc(l.title) + '</b></span>' +
+          '<span class="mut" style="font-size:10px;letter-spacing:.1em;text-transform:uppercase">' +
+          (read ? 'read' : 'unread') + '</span></summary><div class="body">' +
+          '<p><span class="kicker">mechanism</span>' + esc(l.mechanism) + '</p>' +
+          '<p><span class="kicker">decision rule</span>' + esc(l.rule) + '</p>' +
+          '<p><span class="kicker">trigger threshold</span>' + esc(l.trigger) + '</p>' +
+          '<div class="worked"><span class="kicker">your numbers</span>' + esc(l.example) + '</div>' +
+          (l.caution ? '<div class="note excl">' + esc(l.caution) + '</div>' : '') +
+          '</div></details>';
+      }).join('') +
+      (s.hasDrills
+        ? '<div class="note">' + (!s.drillOk && due
+            ? due + ' drill' + (due === 1 ? '' : 's') + ' from this week ' + (due === 1 ? 'is' : 'are') +
+              ' due in the Professor tab — log at least one attempt to unlock next week.'
+            : 'Drill engagement for this week is logged.') + '</div>'
+        : '');
+    }
+    return '<div class="' + cls + '"><div class="week-head"><h3>Week ' + (i + 1) + ' · ' + esc(w.title) +
+      '</h3>' + badge + '</div>' +
+      '<div class="note" style="margin:6px 0 0">After this week you can: ' + esc(w.outcome) + '</div>' +
+      body + '</div>';
+  }).join('');
+  $('crs-weeks').innerHTML = html;
+
+  $('crs-weeks').querySelectorAll('[data-crs-read]').forEach(function (cb) {
+    cb.addEventListener('click', function (e) { e.stopPropagation(); });
+    cb.addEventListener('change', function () {
+      var id = cb.dataset.crsRead;
+      state.memory[id] = Object.assign({}, state.memory[id], { read: cb.checked, readAt: new Date().toISOString() });
+      state.savedAt = null; cacheSave();
+      renderCourses();
+    });
+  });
+}
+
+var crsTabBtn = document.querySelector('[data-tab="courses"]');
+if (crsTabBtn) crsTabBtn.addEventListener('click', function () { renderCourses(); });
+renderCourses();
+
+/* ================================================================== */
+/* PRACTICE ARENA — "Structure Sniper"                                 */
+/*                                                                     */
+/* Every round is graded against Structure.analyze(), the same         */
+/* deterministic FVG / BOS-CHoCH / sweep detector the Replay tab uses.  */
+/* Bars are either a seeded synthetic series (mulberry32, same PRNG      */
+/* edge-engine.js and replay.js already use) or a random window sliced   */
+/* from whatever the trader already loaded in the Replay tab             */
+/* (state.bars). Nothing here is authored or judged by a model.          */
+/* ================================================================== */
+(function () {
+  'use strict';
+  if (typeof E === 'undefined' || typeof RP === 'undefined') return; // defensive — should always exist
+
+  var gm = {
+    started: false, bars: null, mk: null, seed: null, type: null, answer: null,
+    candidates: [], answered: false, chosen: null, source: null, dealCount: 0,
+    rounds: 0, correct: 0, streak: 0, bestStreak: 0,
+  };
+
+  var DIFF = {
+    easy:   { windowBars: 190, candidates: 3 },
+    medium: { windowBars: 140, candidates: 4 },
+    hard:   { windowBars: 95,  candidates: 5 },
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* synthetic bar generator — seeded, deterministic, replayable        */
+  /* ---------------------------------------------------------------- */
+  function gmSyntheticBars(seed, n) {
+    var rand = E.mulberry32(seed);
+    var bars = [];
+    var price = 4000 + rand() * 800;
+    var drift = 0, driftLeft = 0;
+    var t0 = Date.UTC(2024, 0, 2, 13, 30, 0); // arbitrary anchor — never shown as a real date
+    for (var i = 0; i < n; i++) {
+      if (driftLeft <= 0) { drift = (rand() - 0.5) * 3.2; driftLeft = 6 + Math.floor(rand() * 22); }
+      driftLeft--;
+      var vol = 1.1 + rand() * 2.4;
+      var impulse = rand() < 0.14 ? (1.8 + rand() * 2.4) : 1; // occasional wide bar -> real 3-bar imbalances
+      var open = price;
+      var move = (drift + (rand() - 0.5) * vol) * impulse;
+      var close = open + move;
+      var wick = vol * (0.4 + rand() * 0.9) * impulse;
+      var high = Math.max(open, close) + rand() * wick;
+      var low = Math.min(open, close) - rand() * wick;
+      bars.push({
+        t: t0 + i * 60000,
+        o: E.round(open, 2), h: E.round(high, 2), l: E.round(low, 2), c: E.round(close, 2),
+        v: Math.floor(500 + rand() * 2500),
+      });
+      price = close;
+    }
+    return bars;
+  }
+
+  function gmSourceBars(seed, windowBars) {
+    var wantReplay = ($('gm-src') || {}).value === 'replay';
+    if (wantReplay && state.bars && state.bars.length >= windowBars + 10) {
+      var rand = E.mulberry32(seed);
+      var span = state.bars.length - windowBars;
+      var start = Math.floor(rand() * span);
+      return { bars: state.bars.slice(start, start + windowBars), label: 'replay', fellBack: false };
+    }
+    return { bars: gmSyntheticBars(seed, windowBars), label: 'synthetic', fellBack: wantReplay };
+  }
+
+  function gmTimeLabel(b) { return new Date(b.t).toISOString().slice(11, 16); }
+
+  var QUESTION_TEXT = {
+    fvg: 'Which numbered bar sits inside an unmitigated Fair Value Gap (a 3-bar imbalance that price has not traded back through)?',
+    'break': 'Which numbered bar is where price broke structure — a BOS or CHoCH?',
+    sweep: 'Which numbered bar swept resting liquidity and closed back inside?',
+  };
+
+  function gmDescribeBar(mk, idx) {
+    var g = mk.fvgs.find(function (x) { return x.i === idx; });
+    if (g) return 'a ' + (g.dir === 'bull' ? 'bullish' : 'bearish') + ' fair value gap spanning ' +
+      g.from.toFixed(2) + '–' + g.to.toFixed(2);
+    var b = mk.breaks.find(function (x) { return x.i === idx; });
+    if (b) return b.kind + ' to the ' + b.dir + ' through ' + b.price.toFixed(2);
+    var s = mk.sweeps.find(function (x) { return x.i === idx; });
+    if (s) return (s.side === 'high' ? 'a buy-side' : 'a sell-side') + ' liquidity sweep at ' + s.price.toFixed(2);
+    var sw = mk.swings.find(function (x) { return x.i === idx; });
+    if (sw) return 'a confirmed swing ' + sw.type + ' at ' + sw.price.toFixed(2) + ' — not the event asked about';
+    return 'no computed structural event — just a bar picked at random';
+  }
+
+  function gmAnswerSentence() {
+    var a = gm.answer, t = gm.type;
+    if (t === 'fvg') return 'a ' + (a.dir === 'bull' ? 'bullish' : 'bearish') + ' FVG spanning ' +
+      a.from.toFixed(2) + '–' + a.to.toFixed(2) + ', still unmitigated as of the last bar shown';
+    if (t === 'break') return a.kind + ' to the ' + a.dir + ' through ' + a.price.toFixed(2);
+    return (a.side === 'high' ? 'a buy-side' : 'a sell-side') + ' liquidity sweep at ' + a.price.toFixed(2) +
+      ' that closed back inside';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* round generation — retries until the checked types are answerable  */
+  /* ---------------------------------------------------------------- */
+  function gmNewRound() {
+    var diffKey = ($('gm-diff') || {}).value || 'medium';
+    var diff = DIFF[diffKey] || DIFF.medium;
+    var typesSel = [];
+    if ($('gm-t-fvg') && $('gm-t-fvg').checked) typesSel.push('fvg');
+    if ($('gm-t-break') && $('gm-t-break').checked) typesSel.push('break');
+    if ($('gm-t-sweep') && $('gm-t-sweep').checked) typesSel.push('sweep');
+    if (!typesSel.length) typesSel = ['fvg', 'break', 'sweep'];
+
+    var seedRaw = ($('gm-seed') || {}).value;
+    var seedTxt = seedRaw ? String(seedRaw).trim() : '';
+    var baseSeed = seedTxt && /^-?\d+$/.test(seedTxt)
+      ? (parseInt(seedTxt, 10) >>> 0)
+      : ((Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0);
+
+    for (var attempt = 0; attempt < 40; attempt++) {
+      var seed = (baseSeed + attempt * 7919) >>> 0;
+      var srcInfo = gmSourceBars(seed, diff.windowBars);
+      var win = srcInfo.bars;
+      if (!win || win.length < diff.windowBars) continue;
+      var mk = Structure.analyze(win);
+      if (!mk.available) continue;
+      var pools = { fvg: mk.fvgs, 'break': mk.breaks, sweep: mk.sweeps };
+      var viable = typesSel.filter(function (t) { return pools[t] && pools[t].length; });
+      if (!viable.length) continue;
+
+      var rand = E.mulberry32((seed ^ 0x9e3779b9) >>> 0);
+      var chosenType = viable[Math.floor(rand() * viable.length)];
+      var pool = pools[chosenType];
+      var answer = pool[Math.floor(rand() * pool.length)];
+
+      var used = {}; used[answer.i] = 1;
+      var candIdx = [answer.i];
+      var decoyPool = [];
+      mk.swings.forEach(function (s) { if (!used[s.i]) decoyPool.push(s.i); });
+      mk.fvgs.forEach(function (g) { if (!used[g.i]) decoyPool.push(g.i); });
+      mk.breaks.forEach(function (b) { if (!used[b.i]) decoyPool.push(b.i); });
+      mk.sweeps.forEach(function (s) { if (!used[s.i]) decoyPool.push(s.i); });
+      for (var di = decoyPool.length - 1; di > 0; di--) {
+        var dj = Math.floor(rand() * (di + 1));
+        var dtmp = decoyPool[di]; decoyPool[di] = decoyPool[dj]; decoyPool[dj] = dtmp;
+      }
+      decoyPool.forEach(function (idx) {
+        if (candIdx.length >= diff.candidates || used[idx]) return;
+        used[idx] = 1; candIdx.push(idx);
+      });
+      var guard = 0;
+      while (candIdx.length < diff.candidates && guard < 500) {
+        guard++;
+        var lo = 3, hi = win.length - 3;
+        if (hi <= lo) break;
+        var ridx = lo + Math.floor(rand() * (hi - lo));
+        if (used[ridx]) continue;
+        used[ridx] = 1; candIdx.push(ridx);
+      }
+      if (candIdx.length < 2) continue;
+      for (var ci = candIdx.length - 1; ci > 0; ci--) {
+        var cj = Math.floor(rand() * (ci + 1));
+        var ctmp = candIdx[ci]; candIdx[ci] = candIdx[cj]; candIdx[cj] = ctmp;
+      }
+
+      gm.bars = win; gm.mk = mk; gm.seed = seed; gm.type = chosenType; gm.answer = answer;
+      gm.source = srcInfo.label; gm.fellBack = srcInfo.fellBack;
+      gm.candidates = candIdx.map(function (idx, n) { return { n: n + 1, i: idx, correct: idx === answer.i }; });
+      gm.answered = false; gm.chosen = null; gm.started = true; gm.dealCount++;
+      gmRenderRound();
+      return;
+    }
+    var msg = $('gm-drill');
+    if (msg) msg.innerHTML = '<div class="note excl">Could not deal a round with the selected marker ' +
+      'types after 40 tries — enable another type or switch bar source and try again.</div>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* chart + candidate rendering                                       */
+  /* ---------------------------------------------------------------- */
+  function gmDrawChart() {
+    var el = $('gm-canvas'), empty = $('gm-canvas-empty');
+    if (!el) return;
+    if (!gm.bars) { if (empty) empty.style.display = 'block'; RPCharts.clear('game'); return; }
+    if (empty) empty.style.display = 'none';
+    var pane = RPCharts.ensure('game', 'gm-canvas', 340);
+    if (!pane) return;
+    pane.series.setData(gm.bars.map(function (b) {
+      return { time: Math.floor(b.t / 1000), open: b.o, high: b.h, low: b.l, close: b.c };
+    }));
+    RPCharts.clearLines(pane);
+
+    var markers = gm.candidates.map(function (c) {
+      var b = gm.bars[c.i];
+      var color = '#8b96b3', text = String(c.n);
+      if (gm.answered) {
+        if (c.correct) { color = '#22c55e'; text = String(c.n) + ' ✓'; }
+        else if (gm.chosen === c.n) { color = '#ef4444'; text = String(c.n) + ' ✗'; }
+      }
+      return { time: Math.floor(b.t / 1000), position: 'aboveBar', color: color, shape: 'circle', text: text };
+    });
+    markers.sort(function (a, b) { return a.time - b.time; });
+    pane.series.setMarkers(markers);
+
+    if (gm.answered) {
+      var a = gm.answer;
+      if (gm.type === 'fvg') {
+        var lastT = Math.floor(gm.bars[gm.bars.length - 1].t / 1000);
+        pane.fvg.setBoxes([{
+          t1: Math.floor(a.t / 1000), t2: lastT, p1: a.from, p2: a.to,
+          color: a.dir === 'bull' ? 'rgba(34,197,94,.20)' : 'rgba(239,68,68,.20)',
+        }]);
+      } else {
+        pane.fvg.setBoxes([]);
+        RPCharts.addLine(pane, a.price, '#eab308', gm.type === 'break' ? (a.kind + ' ' + a.price) : ('swept ' + a.price), true);
+      }
+    } else {
+      pane.fvg.setBoxes([]);
+    }
+  }
+
+  function gmRenderRound() {
+    gmDrawChart();
+    var ident = $('gm-ident');
+    if (ident) ident.textContent = gm.started
+      ? ('round ' + gm.dealCount + ' · ' + gm.source + ' bars · seed ' + gm.seed +
+         (gm.fellBack ? ' (no Replay bars loaded — used synthetic instead)' : ''))
+      : '';
+
+    var newBtn = $('gm-newround');
+    if (newBtn) newBtn.textContent = !gm.started ? 'Start round 1' : (gm.answered ? 'Next round' : 'Reroll this round');
+
+    var drill = $('gm-drill');
+    if (!drill) return;
+    if (!gm.started) { drill.innerHTML = '<div class="mut">No round dealt yet.</div>'; return; }
+
+    var html = '<div class="kicker">' + esc(gm.type === 'break' ? 'break of structure' : gm.type) +
+      ' · ' + gm.candidates.length + ' candidates</div>' +
+      '<div style="margin:6px 0 12px;font-size:13.5px">' + esc(QUESTION_TEXT[gm.type]) + '</div>';
+    html += gm.candidates.map(function (c) {
+      var b = gm.bars[c.i];
+      var cls = 'opt';
+      if (gm.answered) {
+        if (c.correct) cls += ' right';
+        else if (gm.chosen === c.n) cls += ' wrong';
+      }
+      return '<button class="' + cls + '" data-cand="' + c.n + '"' + (gm.answered ? ' disabled' : '') + '>' +
+        '#' + c.n + ' — bar ' + c.i + ' · ' + gmTimeLabel(b) + '</button>';
+    }).join('');
+
+    if (gm.answered) {
+      var correct = gm.candidates.some(function (c) { return c.n === gm.chosen && c.correct; });
+      html += '<div class="worked" style="margin-top:10px">' +
+        '<span class="kicker">' + (correct ? 'correct' : 'not quite') + '</span>' +
+        'The right pick was #' + gm.candidates.find(function (c) { return c.correct; }).n + ': ' +
+        esc(gmAnswerSentence()) + '.' +
+        (correct ? '' : '<br>You picked #' + gm.chosen + ': ' + esc(gmDescribeBar(gm.mk, gm.candidates.find(function (c) { return c.n === gm.chosen; }).i)) + '.') +
+        '</div>';
+    }
+    drill.innerHTML = html;
+
+    if (!gm.answered) {
+      drill.querySelectorAll('[data-cand]').forEach(function (btn) {
+        btn.addEventListener('click', function () { gmGrade(Number(btn.dataset.cand)); });
+      });
+    }
+    gmRenderScore();
+  }
+
+  function gmGrade(n) {
+    if (gm.answered || !gm.started) return;
+    gm.answered = true; gm.chosen = n;
+    var picked = gm.candidates.find(function (c) { return c.n === n; });
+    gm.rounds++;
+    if (picked && picked.correct) { gm.correct++; gm.streak++; gm.bestStreak = Math.max(gm.bestStreak, gm.streak); }
+    else { gm.streak = 0; }
+    gmRenderRound();
+  }
+
+  function gmRenderScore() {
+    var el = $('gm-score'); if (!el) return;
+    var acc = gm.rounds ? Math.round((gm.correct / gm.rounds) * 1000) / 10 : 0;
+    el.innerHTML =
+      cell('Rounds', gm.rounds) +
+      cell('Correct', gm.correct + ' / ' + gm.rounds) +
+      cell('Accuracy', acc + '%') +
+      cell('Streak', gm.streak, gm.streak > 0 ? 'pos' : '') +
+      cell('Best streak', gm.bestStreak);
+  }
+
+  $('gm-newround') && $('gm-newround').addEventListener('click', gmNewRound);
+  gmRenderScore();
+})();
+
+/* ================================================================== */
+/* PROGRESS TAB — belt/tier system gated on provable evidence only.     */
+/* Nothing here is a new grading mechanism: "confirmed rule" is read    */
+/* straight off report.confirmed (EdgeEngine's permutation test + FDR   */
+/* correction + walk-forward split), "adherence" is read straight off   */
+/* the confluence.forced flag Replay already sets at order time (same   */
+/* signal the rp-frr Replay panel and Profile's discipline.forcedRate   */
+/* use), the streak reuses RP.sessionSummary()'s own avgPlannedR /      */
+/* avgRealizedOfPlanned fields, and drill mastery reuses the exact      */
+/* box>=4 definition renderProfessor() already uses. Purely additive:   */
+/* no existing function body above is edited. */
+/* ================================================================== */
+var PROGRESS_ADHERENCE_WINDOW = 20;
+var PROGRESS_ADHERENCE_MIN_N = 10;
+
+/** Last N confluence-scored Replay trades: what share were NOT forced through a failing gate. */
+function progressAdherence() {
+  var scored = state.trades.filter(function (t) { return t.replay && t.replay.confluence; });
+  var win = scored.slice(-PROGRESS_ADHERENCE_WINDOW);
+  var adherenceN = win.length;
+  var adherenceRate = adherenceN
+    ? win.filter(function (t) { return !t.replay.confluence.forced; }).length / adherenceN
+    : null;
+  return { scoredN: scored.length, adherenceN: adherenceN, adherenceRate: adherenceRate };
+}
+
+/**
+ * Reconstructs one row per Replay session from the committed ledger (grouped by the seed
+ * RP.createSession assigned that session — there is no separately persisted array of past
+ * sessionSummary() results, so this is the only way to see session-level history after the
+ * fact) plus, if a session is currently open and unfinished, one live row read straight off
+ * RP.sessionSummary(sess) — the canonical source for avgPlannedR / avgRealizedOfPlanned.
+ * Never recomputes those two figures' own ratio; only compares them with >=.
+ */
+function progressSessionStreak() {
+  var pool = state.trades.filter(function (t) { return t.replay; }).concat(sessionLedger);
+  var withPlan = pool.filter(function (t) {
+    return t.replay && Number.isFinite(t.replay.plannedR) && Number.isFinite(t.replay.rMultiple);
+  });
+  var order = [], groups = {};
+  withPlan.forEach(function (t) {
+    var seed = t.replay.seed;
+    if (!groups[seed]) { groups[seed] = []; order.push(seed); }
+    groups[seed].push(t);
+  });
+  var sessions = order.map(function (seed) {
+    var ts = groups[seed];
+    var avgPlanned = ts.reduce(function (a, t) { return a + t.replay.plannedR; }, 0) / ts.length;
+    var avgRealized = ts.reduce(function (a, t) { return a + t.replay.rMultiple; }, 0) / ts.length;
+    return { seed: seed, n: ts.length, avgPlannedR: avgPlanned, avgRealizedR: avgRealized,
+             metPlan: avgRealized >= avgPlanned, live: false };
+  });
+
+  if (typeof sess !== 'undefined' && sess && !sess.closed && sess.trades && sess.trades.length) {
+    var sm = RP.sessionSummary(sess);
+    if (sm.avgPlannedR !== null && sm.avgRealizedOfPlanned !== null) {
+      sessions.push({ seed: sm.seed, n: sm.trades, avgPlannedR: sm.avgPlannedR,
+                      avgRealizedR: sm.avgRealizedOfPlanned,
+                      metPlan: sm.planRealizationRate !== null && sm.planRealizationRate >= 1, live: true });
+    }
+  }
+
+  var current = 0;
+  for (var i = sessions.length - 1; i >= 0; i--) { if (sessions[i].metPlan) current++; else break; }
+  var longest = 0, run = 0;
+  sessions.forEach(function (s) { if (s.metPlan) { run++; if (run > longest) longest = run; } else run = 0; });
+  return { sessions: sessions, current: current, longest: longest };
+}
+
+/** Identical box>=4 "mastered" definition renderProfessor() already computes for the Drill section. */
+function progressDrillMastery() {
+  var boxes = C.DRILLS.map(function (d) { return (state.memory[d.id] || {}).box || 0; });
+  var mastered = boxes.filter(function (b) { return b >= 4; }).length;
+  return { mastered: mastered, total: C.DRILLS.length };
+}
+
+var PROGRESS_TIERS = [
+  { name: 'Novice',
+    requirement: function () { return 'No gate — the floor every trader starts on.'; },
+    meets: function () { return true; } },
+  { name: 'Apprentice',
+    requirement: function (ctx) {
+      return '≥ ' + ctx.minSampleToTest + ' confluence-scored Replay trades logged — EdgeEngine’s ' +
+        'own minimum sample before it will test a condition at all.';
+    },
+    meets: function (ctx) { return ctx.scoredN >= ctx.minSampleToTest; } },
+  { name: 'Practitioner',
+    requirement: function (ctx) {
+      return '≥ ' + ctx.minSampleToConfirm + ' confluence-scored Replay trades (EdgeEngine’s minimum ' +
+        'before any rule can reach "confirmed") AND ≥ 50% adherence (not forced through a failing gate) ' +
+        'over your last ' + ctx.adherenceWindow + ' scored trades.';
+    },
+    meets: function (ctx) {
+      return ctx.scoredN >= ctx.minSampleToConfirm && ctx.adherenceRate !== null && ctx.adherenceRate >= 0.50;
+    } },
+  { name: 'Verified',
+    requirement: function (ctx) {
+      return '≥ 1 rule confirmed by EdgeEngine (permutation test + Benjamini-Hochberg FDR correction at ' +
+        'q=' + ctx.fdrQ + ' + walk-forward split) AND ≥ 70% adherence over your last ' + ctx.adherenceWindow +
+        ' scored trades (minimum ' + ctx.adherenceMinN + ' scored trades to qualify).';
+    },
+    meets: function (ctx) {
+      return ctx.confirmedN >= 1 && ctx.adherenceN >= ctx.adherenceMinN &&
+        ctx.adherenceRate !== null && ctx.adherenceRate >= 0.70;
+    } },
+  { name: 'Master',
+    requirement: function (ctx) {
+      return '≥ 3 confirmed rules AND ≥ 85% adherence over your last ' + ctx.adherenceWindow +
+        ' scored trades AND a live streak of ≥ 3 consecutive Replay sessions where realized R met or beat ' +
+        'planned R.';
+    },
+    meets: function (ctx) {
+      return ctx.confirmedN >= 3 && ctx.adherenceN >= ctx.adherenceMinN &&
+        ctx.adherenceRate !== null && ctx.adherenceRate >= 0.85 && ctx.streakCurrent >= 3;
+    } },
+];
+
+function renderProgress() {
+  if (!$('tab-progress')) return;
+  var adh = progressAdherence();
+  var streak = progressSessionStreak();
+  var drills = progressDrillMastery();
+
+  var ctx = {
+    confirmedN: report.confirmed.length,
+    scoredN: adh.scoredN,
+    adherenceN: adh.adherenceN,
+    adherenceRate: adh.adherenceRate,
+    adherenceWindow: PROGRESS_ADHERENCE_WINDOW,
+    adherenceMinN: PROGRESS_ADHERENCE_MIN_N,
+    minSampleToTest: report.config.minSampleToTest,
+    minSampleToConfirm: report.config.minSampleToConfirm,
+    fdrQ: report.config.fdrQ,
+    streakCurrent: streak.current,
+  };
+
+  var tierIdx = 0;
+  for (var i = PROGRESS_TIERS.length - 1; i >= 0; i--) {
+    if (PROGRESS_TIERS[i].meets(ctx)) { tierIdx = i; break; }
+  }
+  var tier = PROGRESS_TIERS[tierIdx];
+
+  $('pg-tierCard').innerHTML =
+    '<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">' +
+      '<span class="tag pos" style="font-size:13px;padding:6px 12px">' + esc(tier.name) + '</span>' +
+      '<span class="mut" style="font-size:12px">tier ' + (tierIdx + 1) + ' of ' + PROGRESS_TIERS.length + '</span>' +
+    '</div>' +
+    '<div class="scroll" style="margin-top:14px;border:0"><table><thead><tr><th>Tier</th>' +
+    '<th>Requirement (stated, not hidden)</th><th class="num">Status</th></tr></thead><tbody>' +
+    PROGRESS_TIERS.map(function (t, idx) {
+      var passed = t.meets(ctx);
+      return '<tr' + (idx === tierIdx ? ' style="font-weight:600"' : '') + '><td>' + esc(t.name) + '</td><td>' +
+        esc(t.requirement(ctx)) + '</td><td class="num ' + (passed ? 'pos' : 'mut') + '">' +
+        (passed ? '✓ met' : '— not yet') + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+
+  $('pg-streak').innerHTML =
+    cell('Current streak', streak.current + (streak.current === 1 ? ' session' : ' sessions'),
+      streak.current >= 3 ? 'pos' : '') +
+    cell('Best streak so far', streak.longest + (streak.longest === 1 ? ' session' : ' sessions')) +
+    cell('Sessions with a planned target', streak.sessions.length);
+
+  $('pg-sessions').innerHTML = !streak.sessions.length
+    ? '<div class="mut">No Replay sessions with a planned target yet — set a target when you place a ' +
+      'bracket and this fills in after your first session.</div>'
+    : '<div class="scroll" style="border:0"><table><thead><tr><th>Session</th>' +
+      '<th class="num">Trades w/ target</th><th class="num">Avg planned R</th>' +
+      '<th class="num">Avg realized R</th><th class="num">Met plan?</th></tr></thead><tbody>' +
+      streak.sessions.slice().reverse().map(function (s) {
+        return '<tr><td>' + (s.live ? 'current (in progress)' : 'seed ' + s.seed) + '</td><td class="num">' +
+          s.n + '</td><td class="num">' + R(E.round(s.avgPlannedR, 2)) + '</td><td class="num ' +
+          sign(s.avgRealizedR) + '">' + R(E.round(s.avgRealizedR, 2)) + '</td><td class="num ' +
+          (s.metPlan ? 'pos' : 'neg') + '">' + (s.metPlan ? 'yes' : 'no') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+
+  $('pg-drillNote').textContent = '(' + drills.mastered + ' of ' + drills.total + ' mastered)';
+  var drillPct = drills.total ? Math.round((drills.mastered / drills.total) * 100) : 0;
+  $('pg-drills').innerHTML =
+    '<div class="note" style="margin:0 0 10px">Mastered = Leitner box ≥ 4 in the same spaced-repetition ' +
+    'scheduler the Professor tab’s Drill section uses (<code>state.memory[id].box</code>). Getting a drill ' +
+    'wrong resets its box, so this cannot be gamed by repetition alone.</div>' +
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;height:14px;overflow:hidden">' +
+    '<div style="width:' + drillPct + '%;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))"></div>' +
+    '</div><div class="note" style="margin-top:8px">' + drills.mastered + ' / ' + drills.total +
+    ' drills mastered (' + drillPct + '%)</div>';
+
+  $('pg-explain').innerHTML =
+    '<p style="margin:0 0 10px"><b>Confirmed rules</b> — a direct read of <code>report.confirmed.length</code>, ' +
+    'the same EdgeEngine output the Bench tab shows: a tag or condition only counts once it beats the rest of ' +
+    'your own trades on a permutation test, survives Benjamini-Hochberg FDR correction across every condition ' +
+    'tested this run (currently q=' + report.config.fdrQ + '), and still holds on the out-of-sample half of your ' +
+    'walk-forward split. Right now: ' + report.confirmed.length + ' confirmed of ' + report.hypothesesTested +
+    ' tested.</p>' +
+    '<p style="margin:0 0 10px"><b>Adherence</b> — the share of your last ' + PROGRESS_ADHERENCE_WINDOW +
+    ' confluence-scored Replay trades where the order was NOT forced through a failing confluence grade. This ' +
+    'is the exact <code>confluence.forced</code> flag Replay sets at order time (the same warning color you see ' +
+    'in the Replay session log, and the same figure behind <code>forcedRate</code> in your Profile tab’s ' +
+    'discipline stats) — nothing new is graded here, this only re-aggregates it over a rolling window. Needs ' +
+    'at least ' + PROGRESS_ADHERENCE_MIN_N + ' scored trades before it counts toward a tier; you currently have ' +
+    adh.adherenceN + ' in the window.</p>' +
+    '<p style="margin:0 0 10px"><b>Streak</b> — built from Replay’s own <code>sessionSummary()</code> fields ' +
+    '(<code>avgPlannedR</code>, <code>avgRealizedOfPlanned</code>), one row per session: grouped by that ' +
+    'session’s own seed for finished sessions already sitting in your ledger, or read live off the currently ' +
+    'open session. A session "meets plan" when the average realized R across its planned trades is ≥ the ' +
+    'average planned R — i.e. you let winners run to where you said they would, instead of cutting them short.</p>' +
+    '<p style="margin:0"><b>Drill mastery</b> — the identical box≥ 4 definition the Professor tab’s Drill ' +
+    'section already uses. No score on this page is estimated, guessed, or awarded for effort — every number ' +
+    'here is arithmetic over your own ledger and recomputes the moment that ledger changes.</p>';
+}
+
+/* ---- wiring: additive-only. Wraps (does not edit) renderAll() and         */
+/* reportDependentRenders() so the Progress tab redraws whenever every other */
+/* tab does, and adds a second, harmless click listener per nav button that  */
+/* shows/hides tab-progress specifically (the shared hard-coded tab-switch   */
+/* array in the main click handler does not know this tab's id yet).        */
+(function () {
+  var _renderAll = renderAll;
+  renderAll = function () { _renderAll(); renderProgress(); };
+  var _reportDependentRenders = reportDependentRenders;
+  reportDependentRenders = function () { _reportDependentRenders(); renderProgress(); };
+
+  var progressSection = $('tab-progress');
+  if (progressSection) {
+    document.querySelectorAll('nav [role=tab]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        progressSection.hidden = (b.dataset.tab !== 'progress');
+        if (b.dataset.tab === 'progress') renderProgress();
+      });
+    });
+  }
+})();
+
+/* ================================================================== */
+/* Prop Challenge — FTMO/Topstep-style rule enforcement layered on top  */
+/* of the existing Replay session engine (RP). No parallel backtester:  */
+/* bars come from RP.loadBars, sessions from RP.createSession, stepping */
+/* from RP.step, fills from RP.placeMarket/closeAt, summary from        */
+/* RP.sessionSummary — this file only adds the three threshold checks   */
+/* a prop firm layers on top of an ordinary session.                    */
+/* ================================================================== */
+var chalBars = null, chalSess = null, chalPlaying = false, chalTimer = null;
+var chalState = null;
+/* state shape: { status: 'active'|'passed'|'failed'|'abandoned',
+   startEquity, profitTargetDollars, dailyLossDollars, ddDollars, ddMode,
+   dayStartDate, dayStartEquity, peakEquity, reason } */
+
+var CHALLENGE_PRESETS = {
+  eval50k: { equity: 50000, target: 8, daily: 5, dd: 10, ddMode: 'trailing',
+    note: 'FTMO-style evaluation: reach +8% equity before either loss limit fires. The 10% drawdown ' +
+      'limit TRAILS your peak equity upward (never back down) as you print profit.' },
+  combine50k: { equity: 50000, target: 6, daily: 3, dd: 4, ddMode: 'static',
+    note: 'Topstep-style funded combine: tighter daily and max-loss limits, and the 4% max drawdown is ' +
+      'STATIC — measured off the $50,000 starting balance, not off your peak, so banking profit does not ' +
+      'buy you any extra room.' },
+};
+
+function chalApplyPreset() {
+  var key = $('chal-preset').value;
+  var p = CHALLENGE_PRESETS[key];
+  var custom = key === 'custom';
+  ['chal-equity', 'chal-target', 'chal-daily', 'chal-dd', 'chal-ddmode'].forEach(function (id) {
+    $(id).disabled = !custom;
+  });
+  if (p) {
+    $('chal-equity').value = p.equity; $('chal-target').value = p.target;
+    $('chal-daily').value = p.daily; $('chal-dd').value = p.dd; $('chal-ddmode').value = p.ddMode;
+    $('chal-presetNote').textContent = p.note;
+  } else {
+    $('chal-presetNote').textContent = 'Custom numbers — percentages are of the starting account size below.';
+  }
+}
+$('chal-preset').addEventListener('change', chalApplyPreset);
+
+function chalInit() {
+  $('chal-inst').innerHTML = INSTRUMENTS.map(function (i) {
+    return '<option value="' + i.id + '">' + esc(i.label) + '</option>'; }).join('');
+  chalApplyPreset();
+}
+
+/* ---- bar loading: RP.loadBars only, same as Replay's own drop zone ---- */
+function chalDataInfo() {
+  $('chal-dataInfo').innerHTML = !chalBars ? 'No bar file loaded.' :
+    chalBars.bars.length.toLocaleString('en-US') + ' bars' +
+    (chalBars.baseTimeframeMin ? ' · base timeframe ' + chalBars.baseTimeframeMin + 'm' : '') +
+    (chalBars.range ? ' · ' + esc(chalBars.range.first.slice(0, 10)) + ' → ' +
+      esc(chalBars.range.last.slice(0, 10)) : '') +
+    (chalBars.rejected && chalBars.rejected.length ? ' · <span class="excl">' + chalBars.rejected.length +
+      ' rows rejected</span>' : '');
+}
+$('chal-useReplayBars').addEventListener('click', function () {
+  if (!rpBars || !rpBars.bars.length) {
+    $('chal-dataInfo').innerHTML = '<span class="excl">Replay has no bars loaded yet — load a market or ' +
+      'drop a CSV there first, or drop one below instead.</span>';
+    return;
+  }
+  chalBars = rpBars;
+  chalDataInfo();
+});
+var chalDrop = $('chal-drop');
+var chalFile = document.createElement('input'); chalFile.type = 'file'; chalFile.accept = '.csv,.txt';
+chalDrop.addEventListener('click', function () { chalFile.click(); });
+chalDrop.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); chalFile.click(); } });
+['dragenter', 'dragover'].forEach(function (ev) { chalDrop.addEventListener(ev, function (e) { e.preventDefault(); chalDrop.classList.add('over'); }); });
+['dragleave', 'drop'].forEach(function (ev) { chalDrop.addEventListener(ev, function (e) { e.preventDefault(); chalDrop.classList.remove('over'); }); });
+function chalLoadBarText(text) {
+  var res;
+  try { res = RP.loadBars(text); }
+  catch (e) { alert('Could not read that as bar data.'); return; }
+  if (!res.bars.length) { alert('No usable bars found. Needs time, open, high, low and close columns.'); return; }
+  chalBars = res;
+  chalDataInfo();
+}
+chalDrop.addEventListener('drop', function (e) {
+  var f = e.dataTransfer.files[0]; if (f) f.text().then(chalLoadBarText); });
+chalFile.addEventListener('change', function () {
+  var f = chalFile.files[0]; if (f) f.text().then(chalLoadBarText); });
+
+/* ---- start / abandon ---- */
+$('chal-new').addEventListener('click', function () {
+  if (!chalBars) {
+    $('chal-msg').innerHTML = '<span class="excl">Load bars first — pull in Replay\'s, or drop a CSV above.</span>';
+    return;
+  }
+  var inst = INSTRUMENTS.filter(function (i) { return i.id === $('chal-inst').value; })[0] || INSTRUMENTS[0];
+  var loadedTf = chalBars.baseTimeframeMin || 5;
+  var seedIn = $('chal-seed').value.trim();
+  var startEquity = numv($('chal-equity').value) || 50000;
+  var opts = {
+    seed: seedIn === '' ? null : (parseInt(seedIn, 10) >>> 0),
+    blind: $('chal-blind').value === '1',
+    warmupBars: rpBarsFromDays(parseFloat($('chal-lookback').value) || 3, loadedTf),
+    sessionBars: rpBarsFromDays(parseFloat($('chal-sessionlen').value) || 10, loadedTf),
+    chartTfMin: parseInt($('chal-tf').value, 10) || 5,
+    startEquity: startEquity,
+    riskPct: (numv($('chal-risk').value) || 0.5) / 100,
+    tickSize: inst.tickSize, tickValue: inst.tickValue,
+    commissionPerContract: inst.comm, symbol: inst.id,
+  };
+  try { chalSess = RP.createSession(chalBars.bars, opts); }
+  catch (e) {
+    $('chal-msg').innerHTML = '<span class="excl">' + esc(e.message) +
+      ' — try a shorter lookback/challenge window, or load more history.</span>';
+    return;
+  }
+  chalState = {
+    status: 'active',
+    startEquity: startEquity,
+    profitTargetDollars: startEquity * (numv($('chal-target').value) || 8) / 100,
+    dailyLossDollars: startEquity * (numv($('chal-daily').value) || 5) / 100,
+    ddDollars: startEquity * (numv($('chal-dd').value) || 10) / 100,
+    ddMode: $('chal-ddmode').value,
+    dayStartDate: null, dayStartEquity: startEquity,
+    peakEquity: startEquity,
+    reason: null,
+  };
+  $('chal-msg').innerHTML = '<span class="pos">Challenge started. Seed ' + chalSess.cfg.seed +
+    ' — note it if you want to replay this exact slice.</span>';
+  ['chal-play', 'chal-step', 'chal-end'].forEach(function (id) { $(id).disabled = false; });
+  $('chal-summary').innerHTML = '<div class="note" style="margin:0">Still in progress.</div>';
+  chalEnforce();
+  chalRender();
+});
+
+$('chal-end').addEventListener('click', function () {
+  if (!chalSess || chalSess.closed) return;
+  RP.finish(chalSess, 'abandoned by trader');
+  chalState.status = 'abandoned';
+  chalState.reason = 'Ended by the trader before a pass or fail threshold was hit.';
+  chalStopControls();
+  chalRender();
+});
+
+/* ---- rule enforcement: the actual point of this tab ---- */
+function chalEquityNow(s) {
+  var eq = s.equity;
+  var p = s.position;
+  if (p) {
+    var dir = p.side === 'long' ? 1 : -1;
+    var close = RP.lastBar(s).c;
+    var ticks = ((close - p.entry) * dir) / s.cfg.tickSize;
+    eq += ticks * s.cfg.tickValue * p.qty;   // floating P&L counts against the limits immediately
+  }
+  return eq;
+}
+function chalDayKey(s) { return new Date(RP.lastBar(s).t).toISOString().slice(0, 10); }
+
+function chalEnforce() {
+  if (!chalSess || !chalState || chalState.status !== 'active') return;
+  var today = chalDayKey(chalSess);
+  if (chalState.dayStartDate !== today) {
+    chalState.dayStartDate = today;
+    chalState.dayStartEquity = chalEquityNow(chalSess);
+  }
+  var eqNow = chalEquityNow(chalSess);
+  chalState.peakEquity = Math.max(chalState.peakEquity, eqNow);
+
+  var dailyFloor = chalState.dayStartEquity - chalState.dailyLossDollars;
+  var ddFloor = (chalState.ddMode === 'static' ? chalState.startEquity : chalState.peakEquity) - chalState.ddDollars;
+  var targetCeiling = chalState.startEquity + chalState.profitTargetDollars;
+
+  if (eqNow <= dailyFloor) {
+    chalSettle('failed', 'Daily loss limit breached: equity ' + usd(eqNow) + ' fell through ' +
+      usd(dailyFloor) + ' (' + chalState.dayStartDate + ' started at ' + usd(chalState.dayStartEquity) + ').');
+  } else if (eqNow <= ddFloor) {
+    chalSettle('failed', (chalState.ddMode === 'static' ? 'Max drawdown' : 'Trailing drawdown') +
+      ' breached: equity ' + usd(eqNow) + ' fell through ' + usd(ddFloor) + '.');
+  } else if (eqNow >= targetCeiling) {
+    chalSettle('passed', 'Profit target reached: equity ' + usd(eqNow) + ' cleared ' + usd(targetCeiling) + '.');
+  }
+}
+function chalSettle(status, reason) {
+  RP.finish(chalSess, reason);
+  chalState.status = status;
+  chalState.reason = reason;
+  chalStopControls();
+}
+function chalPause() { chalPlaying = false; clearInterval(chalTimer); $('chal-play').textContent = 'Play'; }
+function chalStopControls() {
+  chalPause();
+  ['chal-play', 'chal-step', 'chal-place', 'chal-flat', 'chal-end'].forEach(function (id) { $(id).disabled = true; });
+}
+
+/* ---- play / step ---- */
+function chalPlay() {
+  if (!chalSess || chalSess.closed) return;
+  chalPlaying = true; $('chal-play').textContent = 'Pause';
+  chalTimer = setInterval(function () {
+    if (!chalSess || chalSess.closed) { chalPause(); return; }
+    RP.step(chalSess);
+    chalEnforce();
+    chalRender();
+    if (chalSess.closed) chalPause();
+  }, parseInt($('chal-speed').value, 10));
+}
+$('chal-play').addEventListener('click', function () { chalPlaying ? chalPause() : chalPlay(); });
+$('chal-speed').addEventListener('change', function () { if (chalPlaying) chalPlay(); });
+$('chal-step').addEventListener('click', function () {
+  if (!chalSess || chalSess.closed) return;
+  RP.step(chalSess); chalEnforce(); chalRender();
+});
+
+/* ---- order ticket ---- */
+function chalSizePreview() {
+  if (!chalSess) { $('chal-size').textContent = '—'; return; }
+  var stop = numv($('chal-stop').value);
+  if (stop === null) { $('chal-size').textContent = '—'; return; }
+  var nextOpen = chalSess.cursor + 1 <= chalSess.endIndex ? chalSess.bars[chalSess.cursor + 1].o : RP.lastBar(chalSess).c;
+  var sz = RP.sizeForRisk(chalSess.cfg, chalSess.equity, nextOpen, stop);
+  $('chal-size').innerHTML = sz.qty >= 1
+    ? sz.qty + ' contracts · risking ' + usd(sz.riskDollars)
+    : '<span class="excl">0 — need ' + usd(sz.minEquityForOne) + ' equity for one</span>';
+}
+['chal-stop', 'chal-tgt', 'chal-side'].forEach(function (id) {
+  $(id).addEventListener('input', chalSizePreview); $(id).addEventListener('change', chalSizePreview);
+});
+$('chal-place').addEventListener('click', function () {
+  if (!chalSess || chalSess.closed || chalSess.position) return;
+  var res = RP.placeMarket(chalSess, {
+    side: $('chal-side').value, stop: numv($('chal-stop').value), target: numv($('chal-tgt').value),
+  });
+  $('chal-orderMsg').innerHTML = res.ok
+    ? '<span class="pos">Filled ' + res.position.qty + ' @ ' + res.position.entry + '</span>'
+    : '<span class="excl">' + esc(res.reason) + '</span>';
+  chalEnforce();
+  chalRender();
+});
+$('chal-flat').addEventListener('click', function () {
+  if (!chalSess || !chalSess.position) return;
+  RP.closeAt(chalSess, RP.lastBar(chalSess).c, 'manual flatten');
+  chalEnforce();
+  chalRender();
+});
+
+/* ---- rendering ---- */
+function chalDrawChart() {
+  var emptyEl = $('chal-canvas-empty');
+  if (!chalSess) { if (emptyEl) emptyEl.style.display = 'block'; RPCharts.clear('chal'); return; }
+  if (emptyEl) emptyEl.style.display = 'none';
+  var pane = RPCharts.ensure('chal', 'chal-canvas', 340);
+  if (!pane) return;
+  var series = RP.chart(chalSess, chalSess.cfg.chartTfMin);
+  var view = series.slice(-500);
+  if (!view.length) return;
+  pane.series.setData(view.map(function (b) {
+    return { time: Math.floor(b.t / 1000), open: b.o, high: b.h, low: b.l, close: b.c }; }));
+  RPCharts.clearLines(pane);
+  var p = chalSess.position;
+  if (p) {
+    RPCharts.addLine(pane, p.entry, '#e9edf7', 'entry ' + p.entry, false);
+    RPCharts.addLine(pane, p.stop, '#ef4444', 'stop ' + p.stop, true);
+    if (p.target !== null) RPCharts.addLine(pane, p.target, '#22c55e', 'target ' + p.target, true);
+  } else {
+    RPCharts.addLine(pane, numv($('chal-stop').value), '#ef4444', 'stop', true);
+    RPCharts.addLine(pane, numv($('chal-tgt').value), '#22c55e', 'target', true);
+  }
+}
+function chalRenderBanner() {
+  var el = $('chal-banner');
+  if (!chalState) {
+    el.innerHTML = '<div class="note" style="margin:0">Configure a challenge above and start a session — status appears here.</div>';
+    return;
+  }
+  var label, cls, detail;
+  if (chalState.status === 'active') { label = 'IN PROGRESS'; cls = ''; detail = 'Trading — all three thresholds are enforced live below, on every bar and every fill.'; }
+  else if (chalState.status === 'passed') { label = 'PASSED'; cls = 'pos'; detail = chalState.reason; }
+  else if (chalState.status === 'failed') { label = 'FAILED'; cls = 'neg'; detail = chalState.reason; }
+  else { label = 'ABANDONED'; cls = 'warn'; detail = chalState.reason; }
+  el.innerHTML = '<div style="font-size:20px;font-weight:800" class="' + cls + '">' + esc(label) + '</div>' +
+    '<div class="note" style="margin-top:6px">' + esc(detail || '') + '</div>';
+}
+function chalRenderDash() {
+  var el = $('chal-dash');
+  if (!chalSess || !chalState) { el.innerHTML = ''; return; }
+  var eqNow = chalEquityNow(chalSess);
+  var dailyFloor = chalState.dayStartEquity - chalState.dailyLossDollars;
+  var ddFloor = (chalState.ddMode === 'static' ? chalState.startEquity : chalState.peakEquity) - chalState.ddDollars;
+  var targetCeiling = chalState.startEquity + chalState.profitTargetDollars;
+  var dailyCushion = eqNow - dailyFloor;
+  var ddCushion = eqNow - ddFloor;
+  var targetProgress = Math.max(0, Math.min(1, (eqNow - chalState.startEquity) / chalState.profitTargetDollars));
+  el.innerHTML =
+    cell('Equity', usd(eqNow), sign(eqNow - chalState.startEquity)) +
+    cell('Daily loss cushion', usd(dailyCushion), dailyCushion < chalState.dailyLossDollars * 0.25 ? 'neg' : '') +
+    cell('Daily floor', usd(dailyFloor), 'mut') +
+    cell((chalState.ddMode === 'static' ? 'Max DD' : 'Trailing DD') + ' cushion', usd(ddCushion),
+      ddCushion < chalState.ddDollars * 0.25 ? 'neg' : '') +
+    cell((chalState.ddMode === 'static' ? 'Max DD' : 'Trailing DD') + ' floor', usd(ddFloor), 'mut') +
+    cell('Peak equity', usd(chalState.peakEquity), 'mut') +
+    cell('Profit target progress', pct(targetProgress), (eqNow - chalState.startEquity) >= 0 ? 'pos' : 'neg') +
+    cell('Profit target', usd(targetCeiling), 'mut') +
+    cell('Trading day', chalState.dayStartDate || '—', 'mut');
+}
+function chalRenderPos() {
+  var p = chalSess && chalSess.position;
+  $('chal-pos').innerHTML = !p ? cell('Position', 'flat', 'mut') :
+    cell('Side', p.side) + cell('Qty', p.qty) + cell('Entry', p.entry) + cell('Stop', p.stop) +
+    cell('Target', p.target === null ? '—' : p.target) +
+    cell('Open R', R(E.round(((RP.lastBar(chalSess).c - p.entry) * (p.side === 'long' ? 1 : -1)) / p.riskPerUnit, 2)),
+      sign((RP.lastBar(chalSess).c - p.entry) * (p.side === 'long' ? 1 : -1)));
+  $('chal-flat').disabled = !p || !chalSess || chalSess.closed;
+  $('chal-place').disabled = !chalSess || chalSess.closed || !!p;
+}
+function chalRenderLog() {
+  $('chal-log').querySelector('tbody').innerHTML = (chalSess && chalSess.trades.length)
+    ? chalSess.trades.slice().reverse().map(function (t) {
+        return '<tr><td>' + t.side + '</td><td class="num">' + t.qty + '</td><td class="num">' + t.entry + '</td>' +
+          '<td class="num">' + t.stop + '</td><td class="num">' + t.exit + '</td>' +
+          '<td class="num">' + (t.plannedR === null ? '—' : R(t.plannedR)) + '</td>' +
+          '<td class="num">' + R(t.rMultiple) + '</td>' +
+          '<td class="num">' + R(t.mfeR) + '</td><td class="num">' + R(t.maeR) + '</td>' +
+          '<td>' + esc(t.exitReason) + '</td></tr>';
+      }).join('')
+    : '<tr><td colspan="10" class="mut">No trades yet.</td></tr>';
+}
+function chalRenderProgress() {
+  if (!chalSess) { $('chal-prog').textContent = ''; return; }
+  var pr = RP.progress(chalSess);
+  $('chal-prog').textContent = 'bar ' + Math.max(0, pr.bar) + ' of ' + pr.total + ' · equity ' + usd(chalSess.equity);
+  $('chal-ident').innerHTML = (!chalSess.cfg.blind || chalSess.closed)
+    ? '<span class="mut">' + esc(chalSess.cfg.symbol) + '</span>'
+    : '<span class="mut">sealed</span>';
+}
+function chalRenderSummary() {
+  if (!chalSess || !chalSess.closed) return;
+  var sm = RP.sessionSummary(chalSess);
+  var cls = chalState.status === 'passed' ? 'pos' : chalState.status === 'failed' ? 'neg' : 'warn';
+  $('chal-summary').innerHTML =
+    cell('Result', chalState.status.toUpperCase(), cls) +
+    cell('Trades', sm.trades) + cell('Wins', sm.wins) +
+    cell('Total R', R(sm.totalR), sign(sm.totalR)) +
+    cell('Expectancy', R(sm.expectancyR), sign(sm.expectancyR)) +
+    cell('Net P&L', usd(sm.netPnl), sign(sm.netPnl)) +
+    cell('Start equity', usd(sm.startEquity)) + cell('End equity', usd(sm.endEquity)) +
+    cell('Avg MFE', R(sm.avgMfeR)) + cell('Avg MAE', R(sm.avgMaeR)) +
+    cell('Plan realization', sm.planRealizationRate === null ? '—' : pct(sm.planRealizationRate));
+}
+function chalRender() {
+  chalDrawChart();
+  chalSizePreview();
+  chalRenderBanner();
+  chalRenderDash();
+  chalRenderPos();
+  chalRenderLog();
+  chalRenderProgress();
+  if (chalSess && chalSess.closed) chalRenderSummary();
+}
+
+chalInit();
+
 })();
 </script>
 </body>
