@@ -102,8 +102,8 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 200;
 const _cache = new Map();
 
-function cacheKey(symbol, interval, month, full) {
-  return symbol + '|' + interval + '|' + (month || '') + '|' + (full ? '1' : '0');
+function cacheKey(symbol, interval, month, full, from, to) {
+  return symbol + '|' + interval + '|' + (month || '') + '|' + (full ? '1' : '0') + '|' + (from || '') + '|' + (to || '');
 }
 
 function cacheGet(key) {
@@ -265,14 +265,23 @@ function databentoAuthHeader(key) {
   return 'Basic ' + Buffer.from(key + ':').toString('base64');
 }
 
-function databentoRange(month) {
+function databentoRange(month, from, to) {
+  if (from) {
+    // `to` is inclusive as a calendar date from the caller's point of view —
+    // Databento's range end is exclusive, so push it to the start of the
+    // following day rather than making the caller do that arithmetic.
+    const start = new Date(from + 'T00:00:00Z');
+    const end = new Date((to || from) + 'T00:00:00Z');
+    end.setUTCDate(end.getUTCDate() + 1);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
   if (month) {
     const [y, m] = month.split('-').map(Number);
     const start = new Date(Date.UTC(y, m - 1, 1));
     const end = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1));
     return { start: start.toISOString(), end: end.toISOString() };
   }
-  // No month specified: most recent available window. GLBX historical data
+  // No range specified: most recent available window. GLBX historical data
   // typically lags live by under a day, so anchor "now" a day back to avoid
   // requesting a range the dataset doesn't have yet.
   const end = new Date(Date.now() - 24 * 3600 * 1000);
@@ -280,8 +289,8 @@ function databentoRange(month) {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
-function buildDatabentoUrl(inst, month) {
-  const { start, end } = databentoRange(month);
+function buildDatabentoUrl(inst, month, from, to) {
+  const { start, end } = databentoRange(month, from, to);
   const symbol = inst.root + '.c.0';   // continuous front-month contract
   const params = new URLSearchParams({
     dataset: DATABENTO_DATASET,
@@ -328,12 +337,12 @@ function parseDatabentoCsv(text) {
   return bars.length > MAX_BARS ? bars.slice(bars.length - MAX_BARS) : bars;
 }
 
-async function fetchDatabento(inst, month, key, deadline) {
+async function fetchDatabento(inst, month, from, to, key, deadline) {
   const budget = Math.min(UPSTREAM_TIMEOUT_MS, deadline - Date.now());
   if (budget < 500) return { ok: false, reason: 'Out of time budget. Try again.' };
   let r;
   try {
-    r = await fetchWithTimeout(buildDatabentoUrl(inst, month), {
+    r = await fetchWithTimeout(buildDatabentoUrl(inst, month, from, to), {
       headers: { Authorization: databentoAuthHeader(key) }
     }, budget);
   } catch (e) {
@@ -388,6 +397,9 @@ exports.handler = async function (event) {
   const full = String(q.full || '') === '1';
   const monthRaw = clean(q.month, 7);
   const month = /^\d{4}-\d{2}$/.test(monthRaw) ? monthRaw : null;
+  const fromRaw = clean(q.from, 10), toRaw = clean(q.to, 10);
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(fromRaw) ? fromRaw : null;
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(toRaw) ? toRaw : null;
 
   if (symbol === 'CATALOG' || q.catalog) {
     return ok({
@@ -395,10 +407,12 @@ exports.handler = async function (event) {
       instruments: Object.keys(CATALOG).map(function (k) {
         return {
           id: k, label: CATALOG[k].label, kind: CATALOG[k].kind,
-          // Futures get real date-range history from Databento; equity
-          // TIME_SERIES_INTRADAY month-picking no longer applies (no more
-          // ETF proxies). FX and crypto intraday only return recent data.
-          historicalMonths: CATALOG[k].kind === 'futures'
+          // Futures get a real date range at any interval, straight from
+          // Databento. FX/crypto only get a real date range on Daily (full
+          // history, sliced server-side) \u2014 intraday FX/crypto is a recent-
+          // only Alpha Vantage endpoint with no historical range at all.
+          historicalMonths: CATALOG[k].kind === 'futures',
+          historicalRangeDailyOnly: CATALOG[k].kind !== 'futures'
         };
       }),
       intervals: Object.keys(INTERVALS)
@@ -415,12 +429,19 @@ exports.handler = async function (event) {
   if (monthRaw && !month) {
     return ok({ ok: false, reason: 'Month must be in YYYY-MM format.' });
   }
-  if (month && inst.kind !== 'futures') {
+  if ((fromRaw && !from) || (toRaw && !to)) {
+    return ok({ ok: false, reason: 'Start/end date must be in YYYY-MM-DD format.' });
+  }
+  if (from && to && from > to) {
+    return ok({ ok: false, reason: 'Start date is after end date.' });
+  }
+  const wantsRange = !!(month || from);
+  if (wantsRange && inst.kind !== 'futures' && interval !== 'daily') {
     return ok({
       ok: false,
-      reason: 'A specific historical month isn\u2019t available for ' + inst.label +
-        ' \u2014 FX and crypto data here only covers recent trading. For a specific past date on this ' +
-        'instrument, export a CSV from TradingView and drop it in instead.'
+      reason: 'A specific historical window isn\u2019t available for ' + inst.label + ' at this timeframe' +
+        ' \u2014 FX and crypto intraday data here only covers recent trading. Pick Daily for a full-history ' +
+        'date range, or export a CSV from TradingView and drop it in instead.'
     });
   }
 
@@ -428,7 +449,7 @@ exports.handler = async function (event) {
   // before spending an upstream call. Only successful { ok:true } payloads are
   // cached (cacheSet is called only on the success paths below), so an error
   // never sticks.
-  const ck = cacheKey(symbol, interval, month, full);
+  const ck = cacheKey(symbol, interval, month, full, from, to);
   const cached = cacheGet(ck);
   if (cached) return ok(cached);
 
@@ -438,12 +459,13 @@ exports.handler = async function (event) {
     if (!dbKey) {
       return ok({ ok: false, reason: 'No Databento key configured on this site. Upload a CSV export instead.' });
     }
-    const res = await fetchDatabento(inst, month, dbKey, deadline);
+    const res = await fetchDatabento(inst, month, from, to, dbKey, deadline);
     if (!res.ok) return ok({ ok: false, reason: res.reason });
     const body = {
       ok: true,
       symbol: symbol,
       month: month || null,
+      range: from ? { from: from, to: to || from } : null,
       label: inst.label,
       proxy: false,
       interval: '1min',
@@ -483,15 +505,30 @@ exports.handler = async function (event) {
     const series = findSeries(payload);
     if (!series) return ok({ ok: false, reason: 'Market data returned no series for that request.' });
 
-    const bars = normalize(series);
+    let bars = normalize(series);
+    // Alpha Vantage has no server-side date-range filter — outputsize=full
+    // (already requested above) returns the whole daily history, so a
+    // requested [from,to] window is sliced out of it here rather than
+    // relying on the client to do it after downloading everything.
+    if (from) {
+      const startMs = Date.parse(from + 'T00:00:00Z');
+      const endMs = Date.parse((to || from) + 'T23:59:59Z');
+      bars = bars.filter(function (b) { return b.t >= startMs && b.t <= endMs; });
+    }
     if (bars.length < 120) {
-      return ok({ ok: false, reason: 'Not enough bars returned to seed a replay session.' });
+      return ok({
+        ok: false,
+        reason: from
+          ? 'Not enough bars in that date range to seed a replay session — try a wider window.'
+          : 'Not enough bars returned to seed a replay session.'
+      });
     }
 
     const body = {
       ok: true,
       symbol: symbol,
       month: month || null,
+      range: from ? { from: from, to: to || from } : null,
       label: inst.label,
       proxy: false,
       interval: interval,

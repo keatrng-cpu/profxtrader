@@ -547,14 +547,21 @@
         <option value="60min">1 hour</option>
         <option value="daily">Daily</option>
       </select></div>
-      <div id="rp-monthWrap"><label for="rp-month">Which month <span class="mut">optional</span></label>
-        <input type="month" id="rp-month"></div>
+      <div id="rp-rangeWrap"><label for="rp-from">Date range <span class="mut">optional — exact start/end</span></label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="date" id="rp-from" style="flex:1">
+          <span class="mut" style="font-size:11px">to</span>
+          <input type="date" id="rp-to" style="flex:1">
+        </div>
+      </div>
       <div><label>&nbsp;</label><button class="btn" id="rp-load" style="width:100%">Load bars</button></div>
     </div>
-    <div class="note" id="rp-mktMsg" aria-live="polite">Pick a market and load — leave the month blank for the most recent data.</div>
+    <div class="note" id="rp-mktMsg" aria-live="polite">Pick a market and load — leave the date range blank for the most recent data.</div>
     <div class="note" id="rp-monthNote">Futures are real CME/CBOT/NYMEX/COMEX data (continuous front-month
-      contract) from Databento — not an ETF approximation. Pick any specific past month back to 2000. FX and
-      crypto only cover recent trading; for a specific past date on those, drop your own CSV below instead.</div>
+      contract) from Databento — not an ETF approximation. Pick any exact start/end date back to 2000. FX and
+      crypto support a real date range too, but only on the Daily timeframe (full history, sliced to your
+      window); intraday FX/crypto only covers recent trading — for a specific past date at an intraday
+      timeframe, drop your own CSV below instead.</div>
     <div class="note" id="rp-avNote" style="display:none" aria-live="polite"></div>
   </div>
 
@@ -568,13 +575,23 @@
   <div class="card">
     <div class="grid g4">
       <div><label for="rp-inst">Instrument</label><select id="rp-inst"></select></div>
-      <div><label for="rp-tf">Chart timeframe</label><select id="rp-tf">
+      <div><label for="rp-tf">Chart 1 (primary) timeframe</label><select id="rp-tf">
         <option value="1">1m</option><option value="5" selected>5m</option>
         <option value="15">15m</option><option value="60">1h</option><option value="240">4h</option>
       </select></div>
-      <div><label for="rp-htf">HTF context pane</label><select id="rp-htf">
+      <div><label for="rp-htf">Chart 2 timeframe</label><select id="rp-htf">
         <option value="0">Off</option>
         <option value="15" selected>15m</option><option value="60">1h</option>
+        <option value="240">4h</option><option value="1440">Daily</option>
+      </select></div>
+      <div><label for="rp-tf3">Chart 3 timeframe</label><select id="rp-tf3">
+        <option value="0" selected>Off</option>
+        <option value="15">15m</option><option value="60">1h</option>
+        <option value="240">4h</option><option value="1440">Daily</option>
+      </select></div>
+      <div><label for="rp-tf4">Chart 4 timeframe</label><select id="rp-tf4">
+        <option value="0" selected>Off</option>
+        <option value="15">15m</option><option value="60">1h</option>
         <option value="240">4h</option><option value="1440">Daily</option>
       </select></div>
       <div><label for="rp-lookback">History before you start</label><select id="rp-lookback">
@@ -655,6 +672,18 @@
       <button class="btn ghost tiny" id="rp-clear-drawings" type="button">Clear drawings</button>
       <button class="btn ghost tiny" id="rp-fullscreen" type="button" style="margin-left:auto">⛶ Fullscreen</button>
     </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 4px 8px">
+      <span class="note" style="margin:0">Confluence:</span>
+      <label class="check" style="margin:0;border:0;padding:0">
+        <input type="checkbox" id="rp-mk-fvg" checked> <span style="font-size:11px;color:var(--muted)">Fair value gaps</span></label>
+      <label class="check" style="margin:0;border:0;padding:0">
+        <input type="checkbox" id="rp-mk-breaks" checked> <span style="font-size:11px;color:var(--muted)">BOS/CHoCH</span></label>
+      <label class="check" style="margin:0;border:0;padding:0">
+        <input type="checkbox" id="rp-mk-sweeps" checked> <span style="font-size:11px;color:var(--muted)">Sweeps</span></label>
+      <label class="check" style="margin:0;border:0;padding:0">
+        <input type="checkbox" id="rp-mk-liquidity" checked> <span style="font-size:11px;color:var(--muted)">Resting liquidity</span></label>
+    </div>
+    <div class="note" style="margin:6px 0 0" id="rp-chart1-label"><b>Chart 1</b> · primary — the only chart you trade from</div>
     <div style="position:relative">
       <div id="rp-canvas" class="chart-canvas"></div>
       <div id="rp-canvas-empty" class="note" style="position:absolute;left:14px;top:10px;margin:0;pointer-events:none">Load bars and start a session.</div>
@@ -667,12 +696,33 @@
       </div>
     </div>
     <div class="note" id="rp-toolNote" style="margin-top:6px">Double-click the chart (while flat) to quick-place a bracket — drag the stop/target lines afterward like a slider.</div>
-    <div style="position:relative;margin-top:6px">
-      <div id="rp-canvas-htf" class="chart-canvas-htf"></div>
+    <div id="rp-chart2-wrap" style="display:none">
+      <div class="note" style="margin:6px 0 0" id="rp-chart2-label"><b>Chart 2</b></div>
+      <div style="position:relative;margin-top:6px">
+        <div id="rp-canvas-htf" class="chart-canvas-htf"></div>
+      </div>
+    </div>
+    <div id="rp-chart3-wrap" style="display:none">
+      <div class="note" style="margin:6px 0 0" id="rp-chart3-label"><b>Chart 3</b></div>
+      <div style="position:relative;margin-top:6px">
+        <div id="rp-canvas-3" class="chart-canvas-htf"></div>
+      </div>
+    </div>
+    <div id="rp-chart4-wrap" style="display:none">
+      <div class="note" style="margin:6px 0 0" id="rp-chart4-label"><b>Chart 4</b></div>
+      <div style="position:relative;margin-top:6px">
+        <div id="rp-canvas-4" class="chart-canvas-htf"></div>
+      </div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
       <button class="btn tiny" id="rp-play" disabled>Play</button>
       <button class="btn ghost tiny" id="rp-step" disabled>Step ▸</button>
+      <label for="rp-stepgran" style="margin:0 0 0 6px">by</label>
+      <select id="rp-stepgran" style="width:auto">
+        <option value="0.5">30s</option><option value="1" selected>1m</option>
+        <option value="5">5m</option><option value="15">15m</option>
+        <option value="30">30m</option><option value="60">1h</option><option value="240">4h</option>
+      </select>
       <label for="rp-speed" style="margin:0 0 0 6px">Speed</label>
       <select id="rp-speed" style="width:auto">
         <option value="1000">0.5x</option><option value="500" selected>1x</option>
@@ -680,20 +730,22 @@
       </select>
       <span class="note" id="rp-prog"></span>
     </div>
-    <div class="note">Space plays and pauses, → steps one bar. There is no step backward: rewinding
-      after you have seen the outcome is how a backtest learns to flatter you.</div>
+    <div class="note">Space plays and pauses, → steps one bar at the granularity picked above. There is
+      no step backward: rewinding after you have seen the outcome is how a backtest learns to flatter
+      you. "by" can't go finer than the loaded data's own base resolution — a step is rounded up to at
+      least one base bar.</div>
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;
       gap:8px;flex-wrap:wrap;align-items:center">
       <span class="note" style="margin:0">Go to:</span>
-      <button class="btn ghost tiny" id="rp-goto-ny" disabled>NY open</button>
-      <button class="btn ghost tiny" id="rp-goto-ln" disabled>London open</button>
+      <button class="btn ghost tiny" id="rp-goto-ny" disabled>NY open (8:30 ET)</button>
+      <button class="btn ghost tiny" id="rp-goto-ln" disabled>London open (8:00)</button>
       <button class="btn ghost tiny" id="rp-goto-nd" disabled>Next day open</button>
       <span class="note" id="rp-gotoMsg" style="margin:0" aria-live="polite"></span>
     </div>
     <div class="note">Fast-forwards through bars you take no position in — disabled while you're in a
       trade, since skipping past an open position would skip the management decisions this tool exists
-      to capture. Session windows use a fixed UTC offset, not DST-aware, so treat them as approximate
-      by up to an hour around clock changes.</div>
+      to capture. Jump targets use the real US-Eastern/London wall clock via the browser's own timezone
+      database, so they land correctly across DST changes, not a fixed year-round UTC offset.</div>
   </div>
 
   <h2>Chat with the Professor <span class="note" id="rp-chatState"></span></h2>
@@ -719,15 +771,13 @@
       <button class="btn ghost tiny" id="rp-coachAsk">Ask before I click</button>
       <button class="btn ghost tiny" id="rp-coachDebrief" disabled>Debrief this session</button>
       <label class="check" style="margin:0;border:0;padding:0">
-        <input type="checkbox" id="rp-markup" checked> <span style="font-size:12px;color:var(--muted)">Mark up the chart</span>
-      </label>
-      <label class="check" style="margin:0;border:0;padding:0">
         <input type="checkbox" id="rp-coachAuto"> <span style="font-size:12px;color:var(--muted)">Coach me automatically at each entry</span>
       </label>
     </div>
-    <div class="note">Markup — fair value gaps, breaks of structure, liquidity sweeps, resting
-      highs and lows — is detected in code from revealed bars only, so nothing on the chart can leak
-      the outcome. The Professor reads that same markup; it never reads price itself.</div>
+    <div class="note">Markup — fair value gaps, breaks of structure, liquidity sweeps, resting highs and
+      lows (toggle each on/off in the "Confluence" row above the chart) — is detected in code from
+      revealed bars only, so nothing on the chart can leak the outcome. The Professor reads that same
+      markup; it never reads price itself.</div>
     <div class="note">The Professor never predicts price and never tells you what to trade. It reads the
       same computed numbers you can see and coaches your process.</div>
     <div id="rp-followupWrap" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
@@ -5041,24 +5091,39 @@ $('rp-commit').addEventListener('click', function () {
   state.savedAt = null; recompute();
 });
 
+/** How many base-resolution bars make up one "step" at the picked granularity
+ *  — e.g. picking 15m on 1m-base data steps 15 base bars per click. Rounded
+ *  up to at least 1: you can never step less than the data's own resolution,
+ *  so 30s on 1m-base data just steps one base bar (disclosed in the UI note). */
+function rpStepBars() {
+  var baseMin = (state.barsMeta && state.barsMeta.baseTimeframeMin) || 1;
+  var wantMin = parseFloat($('rp-stepgran').value) || 1;
+  return Math.max(1, Math.round(wantMin / baseMin));
+}
+/** Steps n base bars in one go, stopping early if the session ends — a
+ *  position closing (stop/target hit) mid-batch is NOT a stop condition,
+ *  since the remaining bars in the batch still need to be walked forward. */
+function rpStepBy(n) {
+  if (!sess || sess.closed) return;
+  for (var i = 0; i < n; i++) {
+    var r = RP.step(sess);
+    if (r.done || sess.cursor >= sess.endIndex) { rpRender(); rpFinish(); return; }
+  }
+  rpRender();
+}
 function rpPlay() {
   if (!sess || sess.closed) return;
   playing = true; $('rp-play').textContent = 'Pause';
   clearInterval(timer);
   timer = setInterval(function () {
-    var r = RP.step(sess);
-    rpRender();
-    if (r.done || sess.cursor >= sess.endIndex) { rpPause(); rpFinish(); }
+    rpStepBy(rpStepBars());
+    if (!sess || sess.closed) rpPause();
   }, parseInt($('rp-speed').value, 10));
 }
 function rpPause() { playing = false; clearInterval(timer); $('rp-play').textContent = 'Play'; }
 $('rp-play').addEventListener('click', function () { playing ? rpPause() : rpPlay(); });
 $('rp-speed').addEventListener('change', function () { if (playing) rpPlay(); });
-$('rp-step').addEventListener('click', function () {
-  if (!sess || sess.closed) return;
-  var r = RP.step(sess); rpRender();
-  if (r.done || sess.cursor >= sess.endIndex) rpFinish();
-});
+$('rp-step').addEventListener('click', function () { rpStepBy(rpStepBars()); });
 document.addEventListener('keydown', function (e) {
   if ($('tab-replay').hidden) return;
   var tag = (e.target.tagName || '').toLowerCase();
@@ -5109,14 +5174,41 @@ $('rp-flat').addEventListener('click', function () {
 });
 
 /* ---------------------------------------------------------------- */
+/* TIMEZONE — real DST-aware wall-clock<->UTC conversion, using the      */
+/* IANA database every modern browser already ships via Intl. No fixed   */
+/* offset, no separate tz library: two Intl calls per lookup.            */
+/* ---------------------------------------------------------------- */
+/** The tz's UTC offset in minutes (e.g. -300 for EST, -240 for EDT) at the
+ *  instant utcMs — DST-correct because Intl resolves it from the real
+ *  IANA rules for that exact date, not a fixed year-round assumption. */
+function tzOffsetMinutes(utcMs, tz) {
+  var parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' })
+    .formatToParts(new Date(utcMs));
+  var raw = (parts.find(function (p) { return p.type === 'timeZoneName'; }) || {}).value || 'GMT+0';
+  var m = /GMT([+-]\d{1,2})(?::?(\d{2}))?/.exec(raw);
+  if (!m) return 0;
+  var h = parseInt(m[1], 10), mm = m[2] ? parseInt(m[2], 10) : 0;
+  return h * 60 + (h < 0 ? -mm : mm);
+}
+/** The UTC timestamp (ms) for wall-clock hour:minute in `tz`, on the tz-local
+ *  calendar day that contains utcMs. Two-pass: guess the UTC instant as if
+ *  hour:minute were already UTC, then correct by the tz's real offset AT that
+ *  guess — correct across every real-world DST boundary except the literal
+ *  transition instant itself, which never falls on a kill-zone hour. */
+function wallClockUtc(utcMs, hour, minute, tz) {
+  var parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .formatToParts(new Date(utcMs));
+  var get = function (t) { return +(parts.find(function (p) { return p.type === t; }) || {}).value; };
+  var guess = Date.UTC(get('year'), get('month') - 1, get('day'), hour, minute);
+  return guess - tzOffsetMinutes(guess, tz) * 60000;
+}
+
+/* ---------------------------------------------------------------- */
 /* GO TO — killzone-aware fast-forward                               */
 /* ---------------------------------------------------------------- */
-/* Fixed UTC offsets, not DST-aware — disclosed in the UI note. A proper
-   timezone conversion needs a tz database; that's real weight for an hour of
-   drift twice a year, so the honest approximation is the better trade here. */
-var KILLZONE_UTC = {
-  ny: { hour: 14, minute: 30 },   // 9:30 AM US/Eastern (standard time)
-  london: { hour: 8, minute: 0 }, // 8:00 AM Europe/London (standard time)
+var GOTO_TARGETS = {
+  ny: { hour: 8, minute: 30, tz: 'America/New_York' },   // 8:30 AM US/Eastern, real DST
+  london: { hour: 8, minute: 0, tz: 'Europe/London' },    // 8:00 AM Europe/London, real DST
 };
 function rpGoTo(kind) {
   if (!sess || sess.closed || sess.position) return;
@@ -5127,12 +5219,13 @@ function rpGoTo(kind) {
   while (sess.cursor < sess.endIndex && guard++ < hardLimit) {
     var r = RP.step(sess);
     if (r.done) break;
-    var d = new Date(r.bar.t);
     if (kind === 'nextday') {
+      var d = new Date(r.bar.t);
       if (d.toISOString().slice(0, 10) !== startDate) { found = true; break; }
     } else {
-      var t = KILLZONE_UTC[kind];
-      if (d.getUTCHours() === t.hour && d.getUTCMinutes() >= t.minute) { found = true; break; }
+      var t = GOTO_TARGETS[kind];
+      var target = wallClockUtc(r.bar.t, t.hour, t.minute, t.tz);
+      if (r.bar.t >= target) { found = true; break; }
     }
   }
   rpRender();
@@ -5145,6 +5238,8 @@ $('rp-goto-ny').addEventListener('click', function () { rpGoTo('ny'); });
 $('rp-goto-ln').addEventListener('click', function () { rpGoTo('london'); });
 $('rp-goto-nd').addEventListener('click', function () { rpGoTo('nextday'); });
 $('rp-htf').addEventListener('change', function () { rpDraw(); });
+$('rp-tf3') && $('rp-tf3').addEventListener('change', function () { rpDraw(); });
+$('rp-tf4') && $('rp-tf4').addEventListener('change', function () { rpDraw(); });
 ['rp-stop', 'rp-tgt', 'rp-side'].forEach(function (id) {
   $(id).addEventListener('input', rpSizePreview);
   $(id).addEventListener('change', rpSizePreview);
@@ -5650,6 +5745,9 @@ $('rp-clear-drawings') && $('rp-clear-drawings').addEventListener('click', funct
   rpRedrawDrawings(RPCharts.getPane('ltf'), null);
 });
 $('rp-killzones') && $('rp-killzones').addEventListener('change', function () { rpDraw(); });
+['rp-mk-fvg', 'rp-mk-breaks', 'rp-mk-sweeps', 'rp-mk-liquidity'].forEach(function (id) {
+  $(id) && $(id).addEventListener('change', function () { rpDraw(); });
+});
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape' && rpDrawStart) {
     rpDrawStart = null;
@@ -5760,22 +5858,21 @@ function rpWireDoubleClickTrade(pane) {
   });
 }
 
-// NY-local-time kill zone windows, expressed as fixed (non-DST-adjusted) UTC
-// hours — same honest simplification KILLZONE_UTC above already discloses:
-// the US and UK don't shift clocks on the same date, so real UTC boundaries
-// drift by up to an hour around late Oct and mid/late March. nyopen and
-// pmsession are set to match this app's own killzone TAXONOMY values exactly
-// (9:30-11:00 AM ET and 1:00-2:30 PM ET) rather than the wider, less specific
-// "NY AM" window some general ICT sources cite (documented spread across
-// sources: 7:00-10:00 vs 8:30-11:00 vs 7:00-9:00 NY) — this app picked one
-// specific pair of windows for its own tag vocabulary, so the shading matches
-// that choice, not the broader unresolved community range.
+// Kill zone windows. london/nyopen/silverbullet/pmsession are anchored to a
+// real local wall-clock time (via wallClockUtc, DST-aware) rather than a
+// fixed UTC offset — the US and UK don't shift clocks on the same date, so a
+// fixed offset used to drift the shading up to an hour off the actual local
+// open around late Oct/mid-March. nyopen and pmsession match this app's own
+// killzone TAXONOMY values exactly (9:30-11:00 AM ET and 1:00-2:30 PM ET)
+// rather than the wider, less specific "NY AM" window some general ICT
+// sources cite. "asian" has no single local exchange anchor the way a
+// London/NY open does, so it stays a plain fixed-UTC band, same as always.
 var KILLZONE_BANDS = [
   { key: 'asian', label: 'Asian KZ', fromUtc: 1, toUtc: 5, color: '#8b96b3' },
-  { key: 'london', label: 'London KZ', fromUtc: 7, toUtc: 10, color: '#22d3ee' },
-  { key: 'nyopen', label: 'NY open KZ', fromUtc: 14.5, toUtc: 16, color: '#6366f1' },
-  { key: 'silverbullet', label: 'Silver Bullet', fromUtc: 15, toUtc: 16, color: '#b45cff' },
-  { key: 'pmsession', label: 'PM session KZ', fromUtc: 18, toUtc: 19.5, color: '#eab308' },
+  { key: 'london', label: 'London KZ', tz: 'Europe/London', hour: 7, minute: 0, durationHours: 3, color: '#22d3ee' },
+  { key: 'nyopen', label: 'NY open KZ', tz: 'America/New_York', hour: 9, minute: 30, durationHours: 1.5, color: '#6366f1' },
+  { key: 'silverbullet', label: 'Silver Bullet', tz: 'America/New_York', hour: 10, minute: 0, durationHours: 1, color: '#b45cff' },
+  { key: 'pmsession', label: 'PM session KZ', tz: 'America/New_York', hour: 13, minute: 0, durationHours: 1.5, color: '#eab308' },
 ];
 
 function rpKillzoneShapes(view) {
@@ -5790,7 +5887,8 @@ function rpKillzoneShapes(view) {
   var endDay = new Date(view[view.length - 1].t);
   for (var d = startDay.getTime(); d <= endDay.getTime() + 86400000; d += 86400000) {
     KILLZONE_BANDS.forEach(function (z) {
-      var from = d + z.fromUtc * 3600000, to = d + z.toUtc * 3600000;
+      var from = z.tz ? wallClockUtc(d, z.hour, z.minute, z.tz) : d + z.fromUtc * 3600000;
+      var to = z.tz ? from + z.durationHours * 3600000 : d + z.toUtc * 3600000;
       if (to < view[0].t || from > view[view.length - 1].t) return;
       out.push({
         type: 'rect', t1: Math.floor(from / 1000), t2: Math.floor(to / 1000), p1: lo, p2: hi,
@@ -5832,9 +5930,9 @@ function rpRedrawDrawings(pane, view) {
   RPCharts.setDrawings('ltf', kz.concat(expanded));
 }
 
-function rpDrawPane(containerId, tfMin, paneH, opts) {
+function rpDrawPane(containerId, tfMin, paneH, opts, paneKey) {
   opts = opts || {};
-  var paneKey = containerId === 'rp-canvas' ? 'ltf' : 'htf';
+  paneKey = paneKey || (containerId === 'rp-canvas' ? 'ltf' : 'htf');
   var isLtf = paneKey === 'ltf';
   var emptyEl = isLtf ? $('rp-canvas-empty') : null;
   var stampL = isLtf ? $('rp-canvas-stamp-l') : null;
@@ -5877,9 +5975,16 @@ function rpDrawPane(containerId, tfMin, paneH, opts) {
   }
 
   /* --- structure markup: computed in code, never by a model --- */
-  var markupOn = window.Structure && $('rp-markup') && $('rp-markup').checked;
+  // Detection always runs (whenever available) so the Professor's context is
+  // never worse off just because the trader hid some visual clutter — the
+  // four "Confluence" checkboxes above the chart only gate what's DRAWN.
+  var detectOn = !!window.Structure;
+  var showFvg = !$('rp-mk-fvg') || $('rp-mk-fvg').checked;
+  var showBreaks = !$('rp-mk-breaks') || $('rp-mk-breaks').checked;
+  var showSweeps = !$('rp-mk-sweeps') || $('rp-mk-sweeps').checked;
+  var showLiquidity = !$('rp-mk-liquidity') || $('rp-mk-liquidity').checked;
   var markers = [];
-  if (markupOn) {
+  if (detectOn) {
     try {
       // The chart series includes the currently-forming candle at the tip (its
       // high/low/close will keep changing until enough base bars arrive to
@@ -5898,19 +6003,21 @@ function rpDrawPane(containerId, tfMin, paneH, opts) {
         // absolute `.t`, so this is correct even though Structure.analyze()
         // ran against closedView, a different index space than `view`).
         var lastT = Math.floor(view[view.length - 1].t / 1000);
-        pane.fvg.setBoxes(mk.fvgs.slice(-8).map(function (g) {
+        pane.fvg.setBoxes(showFvg ? mk.fvgs.slice(-8).map(function (g) {
           return {
             t1: Math.floor(g.t / 1000), t2: lastT, p1: g.from, p2: g.to,
             color: g.dir === 'bull' ? 'rgba(34,197,94,.16)' : 'rgba(239,68,68,.16)'
           };
-        }));
+        }) : []);
 
         // resting liquidity — dotted lines at unswept extremes
-        if (mk.restingHigh) RPCharts.addLine(pane, mk.restingHigh.price, '#22d3ee', 'liquidity ' + mk.restingHigh.price.toFixed(2), true);
-        if (mk.restingLow) RPCharts.addLine(pane, mk.restingLow.price, '#22d3ee', 'liquidity ' + mk.restingLow.price.toFixed(2), true);
+        if (showLiquidity) {
+          if (mk.restingHigh) RPCharts.addLine(pane, mk.restingHigh.price, '#22d3ee', 'liquidity ' + mk.restingHigh.price.toFixed(2), true);
+          if (mk.restingLow) RPCharts.addLine(pane, mk.restingLow.price, '#22d3ee', 'liquidity ' + mk.restingLow.price.toFixed(2), true);
+        }
 
         // structure breaks — small circle markers on the bar that broke
-        mk.breaks.slice(-6).forEach(function (b) {
+        if (showBreaks) mk.breaks.slice(-6).forEach(function (b) {
           markers.push({
             time: Math.floor(b.t / 1000), position: 'aboveBar',
             color: b.kind === 'CHoCH' ? '#eab308' : '#6366f1',
@@ -5918,7 +6025,7 @@ function rpDrawPane(containerId, tfMin, paneH, opts) {
           });
         });
         // sweeps — an arrow at the wick that took the level
-        mk.sweeps.slice(-6).forEach(function (s) {
+        if (showSweeps) mk.sweeps.slice(-6).forEach(function (s) {
           markers.push({
             time: Math.floor(s.t / 1000),
             position: s.side === 'high' ? 'aboveBar' : 'belowBar',
@@ -5947,19 +6054,39 @@ function rpDrawPane(containerId, tfMin, paneH, opts) {
   if (stampR) stampR.textContent = tfMin + 'm · last ' + RP.lastBar(sess).c.toFixed(2);
 }
 
+/** Minutes -> the same short label the timeframe <select>s already use. */
+function rpTfLabel(min) {
+  if (min >= 1440) return 'Daily';
+  if (min >= 60) return (min / 60) + 'h';
+  return min + 'm';
+}
+
+// Charts 2-4: identical read-only context panes, each independently
+// toggleable via its own timeframe <select> ("Off" = hidden). Chart 1 stays
+// the only tradeable pane (order lines, drawing tools, click/double-click to
+// trade) — these three are markup-only, same as the original HTF pane was.
+var RP_EXTRA_PANES = [
+  { paneKey: 'htf', selId: 'rp-htf', wrapId: 'rp-chart2-wrap', labelId: 'rp-chart2-label', containerId: 'rp-canvas-htf' },
+  { paneKey: 'p3', selId: 'rp-tf3', wrapId: 'rp-chart3-wrap', labelId: 'rp-chart3-label', containerId: 'rp-canvas-3' },
+  { paneKey: 'p4', selId: 'rp-tf4', wrapId: 'rp-chart4-wrap', labelId: 'rp-chart4-label', containerId: 'rp-canvas-4' },
+];
+
 function rpDraw() {
   rpDrawPane('rp-canvas', sess ? sess.cfg.chartTfMin : 5, 380, { showOrderLines: true });
-  var htfSel = $('rp-htf'), htfTf = htfSel ? parseInt(htfSel.value, 10) : 0;
-  var htfEl = $('rp-canvas-htf');
-  if (htfEl) {
-    if (!sess || !htfTf) {
-      htfEl.parentElement.style.display = 'none';
-      RPCharts.clear('htf');
+  RP_EXTRA_PANES.forEach(function (p, i) {
+    var sel = $(p.selId), wrap = $(p.wrapId);
+    var tf = sel ? parseInt(sel.value, 10) : 0;
+    if (!wrap) return;
+    if (!sess || !tf) {
+      wrap.style.display = 'none';
+      RPCharts.clear(p.paneKey);
     } else {
-      htfEl.parentElement.style.display = 'block';
-      rpDrawPane('rp-canvas-htf', htfTf, 170, { showOrderLines: false });
+      wrap.style.display = '';
+      var lbl = $(p.labelId);
+      if (lbl) lbl.innerHTML = '<b>Chart ' + (i + 2) + '</b> · ' + rpTfLabel(tf);
+      rpDrawPane(p.containerId, tf, 170, { showOrderLines: false }, p.paneKey);
     }
-  }
+  });
 }
 
 function rpRender() {
@@ -6118,22 +6245,31 @@ var MARKETS = [
     return '<option value="' + m[0] + '">' + esc(m[1]) + '</option>'; }).join('');
 })();
 
-function rpMarketSupportsMonth(sym) {
+function rpMarketIsFutures(sym) {
   var m = MARKETS.find(function (x) { return x[0] === sym; });
   return !!(m && m[2]);
 }
-function rpUpdateMonthPicker() {
-  var supports = rpMarketSupportsMonth($('rp-mkt').value);
-  $('rp-monthWrap').style.display = supports ? '' : 'none';
-  if (!supports) $('rp-month').value = '';
-  $('rp-monthNote').textContent = supports
-    ? 'Real CME/CBOT/NYMEX/COMEX data (continuous front-month contract) from Databento — not an ETF ' +
-      'approximation. Pick any specific past month back to 2000.'
-    : 'This market only has recent data available live — for a specific past date, export a CSV from ' +
-      'TradingView and drop it in below instead.';
+/** Futures support a real date range at any timeframe (Databento). FX/crypto
+ *  only support one on Daily (Alpha Vantage full-history, sliced server-side)
+ *  — intraday FX/crypto is recent-data-only regardless of range picked. */
+function rpMarketSupportsRange(sym, interval) {
+  return rpMarketIsFutures(sym) || interval === 'daily';
 }
-$('rp-mkt') && $('rp-mkt').addEventListener('change', rpUpdateMonthPicker);
-rpUpdateMonthPicker();
+function rpUpdateRangePicker() {
+  var supports = rpMarketSupportsRange($('rp-mkt').value, $('rp-int').value);
+  $('rp-rangeWrap').style.display = supports ? '' : 'none';
+  if (!supports) { $('rp-from').value = ''; $('rp-to').value = ''; }
+  $('rp-monthNote').textContent = rpMarketIsFutures($('rp-mkt').value)
+    ? 'Real CME/CBOT/NYMEX/COMEX data (continuous front-month contract) from Databento — not an ETF ' +
+      'approximation. Pick any exact start/end date back to 2000.'
+    : supports
+    ? 'Full daily history from Alpha Vantage, sliced to your exact start/end date.'
+    : 'This market only has recent data available live at an intraday timeframe — pick Daily for a real ' +
+      'date range, or export a CSV from TradingView and drop it in below instead.';
+}
+$('rp-mkt') && $('rp-mkt').addEventListener('change', rpUpdateRangePicker);
+$('rp-int') && $('rp-int').addEventListener('change', rpUpdateRangePicker);
+rpUpdateRangePicker();
 
 // Alpha Vantage's FX_INTRADAY / CRYPTO_INTRADAY are premium-only endpoints — a
 // free-tier key gets an in-band "Information: premium endpoint" response, which
@@ -6142,7 +6278,7 @@ rpUpdateMonthPicker();
 function rpUpdateAvNote() {
   var el = $('rp-avNote');
   if (!el) return;
-  var isFutures = rpMarketSupportsMonth($('rp-mkt').value);
+  var isFutures = rpMarketIsFutures($('rp-mkt').value);
   var isIntraday = $('rp-int').value !== 'daily';
   if (!isFutures && isIntraday) {
     el.style.display = '';
@@ -6158,17 +6294,19 @@ rpUpdateAvNote();
 
 $('rp-load') && $('rp-load').addEventListener('click', function () {
   var sym = $('rp-mkt').value, iv = $('rp-int').value;
-  var month = rpMarketSupportsMonth(sym) ? ($('rp-month').value || '') : '';
+  var rangeOk = rpMarketSupportsRange(sym, iv);
+  var from = rangeOk ? ($('rp-from').value || '') : '';
+  var to = rangeOk ? ($('rp-to').value || '') : '';
   var msg = $('rp-mktMsg');
   if (!authUser) { $('rp-load').disabled = false; authOpen('signin'); return; }
   $('rp-load').disabled = true;
-  msg.innerHTML = '<span class="mut">Loading ' + esc(sym) + (month ? ' — ' + esc(month) : '') + '…</span>';
+  msg.innerHTML = '<span class="mut">Loading ' + esc(sym) + (from ? ' — ' + esc(from) + ' to ' + esc(to || from) : '') + '…</span>';
   // bars.js now requires a signed-in Supabase user (billable market-data
   // endpoint), so send the access token like the checkout/professor calls do.
   authAccessToken().then(function (token) {
     return fetch('/.netlify/functions/bars?symbol=' + encodeURIComponent(sym) +
         '&interval=' + encodeURIComponent(iv) + '&full=1' +
-        (month ? '&month=' + encodeURIComponent(month) : ''),
+        (from ? '&from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to || from) : ''),
         { headers: token ? { Authorization: 'Bearer ' + token } : {} });
   })
     .then(function (r) { return r.json(); })
@@ -6183,7 +6321,7 @@ $('rp-load') && $('rp-load').addEventListener('click', function () {
       state.barsMeta = {
         baseTimeframeMin: d.intervalMin,
         range: { first: d.first, last: d.last },
-        source: d.label + (d.month ? ' · ' + d.month : '')
+        source: d.label + (d.range ? ' · ' + d.range.from + ' to ' + d.range.to : '')
       };
       rpDataInfo(state.barsMeta);
       // Sizing MUST match what was actually loaded — EUR/USD priced trades
@@ -6194,7 +6332,7 @@ $('rp-load') && $('rp-load').addEventListener('click', function () {
       }
       rpLoadedSymbol = sym;
       msg.innerHTML = '<span class="pos">' + d.count.toLocaleString('en-US') + ' bars · ' +
-        esc(d.label) + (d.month ? ' · ' + esc(d.month) : '') +
+        esc(d.label) + (d.range ? ' · ' + esc(d.range.from) + ' to ' + esc(d.range.to) : '') +
         (d.proxy ? ' <span class="mut">(proxy)</span>' : '') + '</span>';
     })
     .catch(function () {
