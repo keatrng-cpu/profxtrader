@@ -483,7 +483,7 @@
 
 <!-- ───────────────────────────── REPLAY ───────────────────────────── -->
 <section id="tab-replay" hidden>
-  <h2>Load a market</h2>
+  <h2><span class="tag" style="margin:0 8px 0 0">1</span>Load a market</h2>
   <div class="card">
     <div class="grid g4">
       <div><label for="rp-mkt">Market</label><select id="rp-mkt"></select></div>
@@ -499,20 +499,20 @@
         <input type="month" id="rp-month"></div>
       <div><label>&nbsp;</label><button class="btn" id="rp-load" style="width:100%">Load bars</button></div>
     </div>
-    <div class="note" id="rp-mktMsg">Pick a market and load — leave the month blank for the most recent data.</div>
+    <div class="note" id="rp-mktMsg" aria-live="polite">Pick a market and load — leave the month blank for the most recent data.</div>
     <div class="note" id="rp-monthNote">Futures are real CME/CBOT/NYMEX/COMEX data (continuous front-month
       contract) from Databento — not an ETF approximation. Pick any specific past month back to 2000. FX and
       crypto only cover recent trading; for a specific past date on those, drop your own CSV below instead.</div>
-    <div class="note" id="rp-avNote" style="display:none"></div>
+    <div class="note" id="rp-avNote" style="display:none" aria-live="polite"></div>
   </div>
 
   <div class="drop" id="rp-drop" tabindex="0" role="button" style="margin-top:12px">
     Or drop an OHLCV CSV — TradingView chart export, or any file with time/open/high/low/close columns.
     Use the lowest timeframe you have; higher ones are built from it.
   </div>
-  <div class="note" id="rp-dataInfo">No bar file loaded.</div>
+  <div class="note" id="rp-dataInfo" aria-live="polite">No bar file loaded.</div>
 
-  <h2>Practice session</h2>
+  <h2><span class="tag" style="margin:0 8px 0 0">2</span>Practice session</h2>
   <div class="card">
     <div class="grid g4">
       <div><label for="rp-inst">Instrument</label><select id="rp-inst"></select></div>
@@ -549,13 +549,14 @@
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="btn" id="rp-new">Start session</button>
       <button class="btn ghost" id="rp-end" disabled>End &amp; reveal</button>
-      <span class="note" id="rp-msg"></span>
+      <span class="note" id="rp-msg" aria-live="polite"></span>
     </div>
     <div class="note">"History before you start" and "Session length" are converted to bar counts using
       whatever timeframe the loaded data actually is — no bar-counting required.</div>
+    <div class="note" id="rp-fitNote" style="display:none;margin-top:6px" aria-live="polite"></div>
   </div>
 
-  <h2>Chart <span class="note" id="rp-ident"></span></h2>
+  <h2><span class="tag" style="margin:0 8px 0 0">3</span>Chart <span class="note" id="rp-ident"></span></h2>
   <div class="card" style="padding:8px">
     <div style="position:relative">
       <div id="rp-canvas" style="width:100%;height:380px"></div>
@@ -584,7 +585,7 @@
       <button class="btn ghost tiny" id="rp-goto-ny" disabled>NY open</button>
       <button class="btn ghost tiny" id="rp-goto-ln" disabled>London open</button>
       <button class="btn ghost tiny" id="rp-goto-nd" disabled>Next day open</button>
-      <span class="note" id="rp-gotoMsg" style="margin:0"></span>
+      <span class="note" id="rp-gotoMsg" style="margin:0" aria-live="polite"></span>
     </div>
     <div class="note">Fast-forwards through bars you take no position in — disabled while you're in a
       trade, since skipping past an open position would skip the management decisions this tool exists
@@ -603,12 +604,12 @@
       <textarea id="rp-chatInput" style="flex:1;min-height:44px;resize:vertical" placeholder="What does that FVG mean for my stop? Should I wait for a retest? Explain the sweep you flagged..."></textarea>
       <button class="btn tiny" id="rp-chatSend" style="flex:none">Send</button>
     </div>
-    <div class="note" id="rp-chatMsg" style="margin-top:6px"></div>
+    <div class="note" id="rp-chatMsg" style="margin-top:6px" aria-live="polite"></div>
   </div>
 
   <h2>Professor <span class="note" id="rp-profState"></span></h2>
   <div class="card">
-    <div id="rp-coach" class="note" style="margin:0;min-height:20px">
+    <div id="rp-coach" class="note" style="margin:0;min-height:20px" aria-live="polite">
       Load bars and open a session — coaching runs on what you have actually recorded, not on generic advice.
     </div>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -633,7 +634,7 @@
         <input id="rp-followupInput" placeholder="Because it swept the session high and shifted on the 5m...">
         <button class="btn tiny" id="rp-followupBtn" style="flex:none">Reply</button>
       </div>
-      <div id="rp-followupResponse" class="note" style="margin-top:8px"></div>
+      <div id="rp-followupResponse" class="note" style="margin-top:8px" aria-live="polite"></div>
     </div>
   </div>
 
@@ -661,7 +662,7 @@
       <button class="btn ghost" id="rp-force" disabled title="Places the trade anyway, tagged rulegrade:c, so its cost is measurable instead of invisible">Place anyway (C grade)</button>
       <button class="btn ghost" id="rp-be" disabled>Stop to breakeven</button>
       <button class="btn ghost" id="rp-flat" disabled>Flatten at market</button>
-      <span class="note" id="rp-orderMsg"></span>
+      <span class="note" id="rp-orderMsg" aria-live="polite"></span>
     </div>
   </div>
 
@@ -675,7 +676,7 @@
     <th class="num">MFE</th><th class="num">MAE</th><th class="num">Latency</th><th>Exit</th>
   </tr></thead><tbody></tbody></table></div>
   <div style="margin-top:10px"><button class="btn" id="rp-commit" disabled>Add session to ledger</button>
-    <span class="note" id="rp-commitMsg"></span></div>
+    <span class="note" id="rp-commitMsg" aria-live="polite"></span></div>
 
   <h2>Planned vs realized</h2>
   <div class="strip" id="rp-plan"></div>
@@ -4190,7 +4191,30 @@ function rpDataInfo(meta) {
     (meta.rejected && meta.rejected.length ? ' · <span class="excl">' + meta.rejected.length +
       ' rows rejected</span>' : '') +
     (meta.sessionGaps ? ' · <span class="mut">' + meta.sessionGaps + ' session gaps (weekends/holidays)</span>' : '');
+  rpUpdateFitNote();
 }
+
+/** Same bar-count math createSession() enforces (rpBarsFromDays, warmup+session+5),
+ *  surfaced BEFORE the click instead of only after — so picking "1 week" lookback
+ *  against a file that only has two days of bars shows the mismatch immediately,
+ *  not as a dead-end error once you've already filled in the rest of the form. */
+function rpUpdateFitNote() {
+  var el = $('rp-fitNote');
+  if (!el) return;
+  if (!rpBars || !rpBars.bars.length) { el.style.display = 'none'; return; }
+  var tf = (state.barsMeta && state.barsMeta.baseTimeframeMin) || 5;
+  var warmup = rpBarsFromDays(parseFloat($('rp-lookback').value) || 3, tf);
+  var session = rpBarsFromDays(parseFloat($('rp-sessionlen').value) || 1, tf);
+  var need = warmup + session + 5;
+  var have = rpBars.bars.length;
+  if (have >= need) { el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = '<span class="excl">Not enough history for this shape:</span> loaded ' +
+    have.toLocaleString('en-US') + ' bars, this needs ' + need.toLocaleString('en-US') +
+    ' — pick a shorter "History before you start" or "Session length" above, or load more data.';
+}
+$('rp-lookback') && $('rp-lookback').addEventListener('change', rpUpdateFitNote);
+$('rp-sessionlen') && $('rp-sessionlen').addEventListener('change', rpUpdateFitNote);
 
 var rpDrop = $('rp-drop');
 rpDrop.addEventListener('click', function () { rpFile.click(); });
