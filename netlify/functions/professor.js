@@ -46,7 +46,7 @@ const HANDLER_BUDGET_MS = 9200;
 const DISCOVERY_BUDGET_MS = 2200;
 const MAX_FIELD_CHARS = 6000;
 
-const TOKENS = { live: 220, debrief: 700, playbook: 900, ask: 700, tag: 200, weekly: 650, followup: 180, chat: 550, focus: 220 };
+const TOKENS = { live: 220, debrief: 700, playbook: 900, ask: 700, tag: 200, weekly: 650, followup: 180, chat: 550, focus: 350 };
 const PRO_ONLY_MODES = { weekly: true };
 const MODEL_TIER = {
   live: 'haiku', followup: 'haiku', tag: 'haiku', focus: 'haiku',

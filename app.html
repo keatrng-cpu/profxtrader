@@ -578,6 +578,7 @@
       <div><label for="rp-tf">Chart 1 (primary) timeframe</label><select id="rp-tf">
         <option value="1">1m</option><option value="5" selected>5m</option>
         <option value="15">15m</option><option value="60">1h</option><option value="240">4h</option>
+        <option value="1440">Daily</option>
       </select></div>
       <div><label for="rp-htf">Chart 2 timeframe</label><select id="rp-htf">
         <option value="0">Off</option>
@@ -1042,6 +1043,7 @@
     test to even qualify): a goal shows an adherence rate and streak on whatever sample you have, with an
     honest n so you can judge how much to trust it yet.</div>
   <div class="card" id="pg-goalPicker" style="margin-bottom:10px"></div>
+  <div class="note" id="pg-goalMsg" style="margin:-4px 0 10px" aria-live="polite"></div>
   <div class="card" id="pg-goals">
     <div id="pg-goalsBody"></div>
     <button class="btn ghost tiny" id="pg-focusAsk" type="button" style="margin-top:10px;display:none">Get the Professor's take</button>
@@ -4009,7 +4011,16 @@ var sign = function (x) { return x === null || x === undefined ? '' : x > 0 ? 'p
 function cell(k, v, cls) {
   return '<div class="cell"><div class="k">' + k + '</div><div class="v ' + (cls || '') + '">' + v + '</div></div>';
 }
-function numv(v) { var n = Number(String(v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : null; }
+// An empty/blank field MUST come back null, never 0 — Number('') is 0 in JS,
+// so without this check a blank "Initial stop" silently became a real $0
+// stop instead of tripping validate()'s "stop is required" rejection,
+// fabricating a near-zero-risk R-multiple on a trade that was never priced.
+function numv(v) {
+  var s = String(v == null ? '' : v).replace(/[$,\s]/g, '');
+  if (s === '') return null;
+  var n = Number(s);
+  return isFinite(n) ? n : null;
+}
 
 /* rows for the engine, built from state.trades */
 function toRows() {
@@ -4230,29 +4241,45 @@ function ingest(text, name) {
       state = { trades: loaded.trades, memory: loaded.memory || {},
                 checklist: loaded.checklist || {}, settings: loaded.settings || {},
                 bars: state.bars || [], barsMeta: loaded.barsMeta || null,
+                goals: loaded.goals || [], chartTheme: loaded.chartTheme || null,
                 savedAt: loaded.savedAt || null };
+      if (typeof RPCharts !== 'undefined' && typeof rpChartTheme === 'function') {
+        RPCharts.setTheme(rpChartTheme());
+        if (typeof rpSyncThemeInputs === 'function') rpSyncThemeInputs();
+      }
       recompute(); return;
     } catch (e) { alert('That JSON is not a ProFX Trading file.'); return; }
   }
   var rows = E.parseCSV(trimmed);
   if (!rows.length) { alert('No data rows found in ' + (name || 'that file') + '.'); return; }
   var m = E.resolveMap(rows).map;
-  var added = 0;
-  rows.forEach(function (row) {
+  var added = 0, skipped = [];
+  rows.forEach(function (row, i) {
+    // normalizeTrade is the SAME validation validate() enforces on manual
+    // entry (a numeric stop on the correct side of entry, etc.) — a row that
+    // fails it must never reach the ledger. Storing it anyway (the previous
+    // behavior here) silently fabricated a trade with a $0 or garbage stop,
+    // exactly the "guessed, not excluded" outcome this app promises never
+    // to do.
     var res = E.normalizeTrade(row, m);
-    var t = res.ok ? res.trade : null;
+    if (!res.ok) { skipped.push({ row: i + 2, reason: res.reason }); return; }
     state.trades.push({
       id: 'I' + (state.trades.length + added) + Date.now().toString(36),
       date: String(row[m.openDate] || ''), symbol: String(row[m.symbol] || ''),
       side: String(row[m.side] || '').toLowerCase().indexOf('s') === 0 ? 'Short' : 'Long',
       qty: numv(row[m.qty]), entry: numv(row[m.entry]), stop: numv(row[m.stop]),
       exit: numv(row[m.exit]), netPnl: numv(row[m.netPnl]),
-      tags: t ? t.tags : E.parseTags(row[m.tags]),
+      tags: res.trade.tags,
     });
     added++;
   });
   state.savedAt = null;
   recompute();
+  if (skipped.length) {
+    alert(added + ' trade(s) imported. ' + skipped.length + ' row(s) skipped (not added to your ledger):\n' +
+      skipped.slice(0, 8).map(function (s) { return 'row ' + s.row + ': ' + s.reason; }).join('\n') +
+      (skipped.length > 8 ? '\n...and ' + (skipped.length - 8) + ' more.' : ''));
+  }
 }
 
 var drop = $('drop');
@@ -5030,6 +5057,19 @@ $('rp-new').addEventListener('click', function () {
   var inst = rpInstrument();
   var seedIn = $('rp-seed').value.trim();
   var loadedTf = (state.barsMeta && state.barsMeta.baseTimeframeMin) || 5;
+  // aggregate() only ever coarsens bars, never subdivides them — asking for a
+  // chart timeframe FINER than the loaded data's own base resolution doesn't
+  // error, it just relabels each base bar with a smaller timeframe than it
+  // actually is (a loaded Daily bar shown as if it were "5m"). Block it here
+  // rather than silently mislabeling every candle on the chart.
+  var wantTf = parseInt($('rp-tf').value, 10) || 5;
+  if (wantTf < loadedTf) {
+    $('rp-msg').innerHTML = '<span class="excl">Chart 1 timeframe is set to ' + rpTfLabel(wantTf) +
+      ' but the loaded data’s own resolution is ' + rpTfLabel(loadedTf) + ' — a finer timeframe than ' +
+      'that can’t be reconstructed, only relabeled. Pick ' + rpTfLabel(loadedTf) + ' or coarser, or load ' +
+      'finer data.</span>';
+    return;
+  }
   var opts = {
     seed: seedIn === '' ? null : (parseInt(seedIn, 10) >>> 0),
     blind: $('rp-blind').value === '1',
@@ -6950,12 +6990,18 @@ $('pf-upgradeBtn').addEventListener('click', function () {
     });
 });
 $('acctPortalBtn').addEventListener('click', function () {
+  var btn = $('acctPortalBtn'); btn.disabled = true;
   authAccessToken().then(function (token) {
     return fetch('/.netlify/functions/portal', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }
     });
   }).then(function (r) { return r.json(); })
-    .then(function (d) { if (d && d.url) window.location.href = d.url; });
+    .then(function (d) {
+      btn.disabled = false;
+      if (d && d.url) { window.location.href = d.url; return; }
+      alert((d && d.reason) || 'Could not open the billing portal.');
+    })
+    .catch(function () { btn.disabled = false; alert('Network error — could not open the billing portal.'); });
 });
 
 /* ---- boot ---- */
@@ -7615,12 +7661,19 @@ function renderGoals() {
     inp.addEventListener('change', function () {
       state.goals = state.goals || [];
       var id = inp.dataset.goal;
+      var msgEl = $('pg-goalMsg');
       if (inp.checked) {
-        if (state.goals.length >= GOALS_MAX) { inp.checked = false; return; }
+        if (state.goals.length >= GOALS_MAX) {
+          inp.checked = false;
+          if (msgEl) msgEl.innerHTML = '<span class="excl">Up to ' + GOALS_MAX + ' goals at a time — ' +
+            'uncheck one first if you want to swap it out.</span>';
+          return;
+        }
         state.goals.push(id);
       } else {
         state.goals = state.goals.filter(function (x) { return x !== id; });
       }
+      if (msgEl) msgEl.innerHTML = '';
       cacheSave();
       renderGoals();
     });
@@ -8045,9 +8098,16 @@ function chalSizePreview() {
   if (stop === null) { $('chal-size').textContent = '—'; return; }
   var nextOpen = chalSess.cursor + 1 <= chalSess.endIndex ? chalSess.bars[chalSess.cursor + 1].o : RP.lastBar(chalSess).c;
   var sz = RP.sizeForRisk(chalSess.cfg, chalSess.equity, nextOpen, stop);
-  $('chal-size').innerHTML = sz.qty >= 1
+  // "Stop price" means an absolute price, not a point-distance from entry —
+  // typing e.g. "98" meaning "98 points away" instead of a real price near
+  // the current level produces a huge, technically-correct-but-baffling
+  // required-equity figure. Always show the actual computed distance so a
+  // units mistake like that is obvious immediately, not just a confusing $0.
+  var distNote = ' (' + sz.ticks + ' ticks from ' + nextOpen.toFixed(2) + ')';
+  $('chal-size').innerHTML = (sz.qty >= 1
     ? sz.qty + ' contracts · risking ' + usd(sz.riskDollars)
-    : '<span class="excl">0 — need ' + usd(sz.minEquityForOne) + ' equity for one</span>';
+    : '<span class="excl">0 — need ' + usd(sz.minEquityForOne) + ' equity for one</span>') +
+    '<span class="mut" style="font-size:11px">' + distNote + '</span>';
 }
 ['chal-stop', 'chal-tgt', 'chal-side'].forEach(function (id) {
   $(id).addEventListener('input', chalSizePreview); $(id).addEventListener('change', chalSizePreview);
