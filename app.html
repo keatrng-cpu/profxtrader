@@ -6875,7 +6875,6 @@ $('acctSignOutBtn').addEventListener('click', function () { sb && sb.auth.signOu
  * of un-owned guest data, or their own returning data.
  */
 function authClaimLocalState(userId) {
-  console.log('DEBUG authClaimLocalState called userId=' + userId + ' state.ownerId=' + state.ownerId + ' tradesLen=' + (state.trades ? state.trades.length : 'n/a'));
   if (state.ownerId && state.ownerId !== userId) {
     state = { trades: [], memory: {}, checklist: {}, settings: {}, goals: [],
               chartTheme: null, bars: [], barsMeta: null, savedAt: null, ownerId: userId };
