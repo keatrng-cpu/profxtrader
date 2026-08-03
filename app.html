@@ -5697,6 +5697,28 @@ var rpLastLiveQuestion = null;   // the Professor's own prior live-mode line, fo
    code-computed structure markup (FVGs/breaks/sweeps), never raw price the
    model didn't already earn access to. Shared by rpCoach and the chat panel
    so "the AI is connected to the chart" means the same context both places. */
+/** The trader's own hand-drawn trendlines/rectangles/rejection markers, read
+ *  back as plain price text — same rule as everything else fed to the
+ *  Professor: only real values already in the shape object (price, never
+ *  raw canvas pixels or the timestamp, which would risk nudging a date into
+ *  a blind-mode reply), never anything invented. */
+function rpDrawingsContext() {
+  if (!rpUserDrawings.length) return '';
+  var lines = ['The trader has hand-drawn ' + rpUserDrawings.length +
+    ' annotation(s) of their own on the chart (not computed by Structure.analyze — their own markup):'];
+  rpUserDrawings.slice(-10).forEach(function (d) {
+    if (d.type === 'marker') {
+      lines.push('- a ' + (d.label || 'marker') + ' at price ' + d.p1.toFixed(2));
+    } else if (d.type === 'rect') {
+      lines.push('- a rectangle spanning ' + Math.min(d.p1, d.p2).toFixed(2) + ' to ' + Math.max(d.p1, d.p2).toFixed(2) +
+        ' — the trader may be marking a fair value gap, order block, or liquidity zone by hand');
+    } else {
+      lines.push('- a trendline from ' + d.p1.toFixed(2) + ' to ' + d.p2.toFixed(2));
+    }
+  });
+  return lines.join('\n');
+}
+
 function rpChartContext() {
   var ctx = '';
   try {
@@ -5705,6 +5727,8 @@ function rpChartContext() {
     var mk = null;
     if (window.Structure && sess) { mk = Structure.analyze(RP.chart(sess, sess.cfg.chartTfMin)); }
     if (mk && mk.available) ctx += '\n\n' + mk.text;
+    var dc = rpDrawingsContext();
+    if (dc) ctx += '\n\n' + dc;
   } catch (e) { /* context is best-effort */ }
   return ctx;
 }
