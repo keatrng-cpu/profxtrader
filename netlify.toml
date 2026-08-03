@@ -11,6 +11,15 @@
   status = 301
   force = true
 
+# Friendly URL for the app. The signed-in application lives at /app.html
+# (index.html is now the public marketing page); /app rewrites to it so links
+# and bookmarks can use the clean path. 200 = rewrite (URL stays /app), not a
+# visible redirect.
+[[redirects]]
+  from = "/app"
+  to = "/app.html"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]

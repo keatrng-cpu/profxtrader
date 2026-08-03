@@ -76,7 +76,7 @@ exports.handler = async function (event) {
   try {
     const params = new URLSearchParams();
     params.set('customer', customerId);
-    params.set('return_url', (siteUrl || '') + '/');
+    params.set('return_url', (siteUrl || '') + '/app.html');
 
     const r = await fetchWithTimeout(STRIPE_URL, {
       method: 'POST',

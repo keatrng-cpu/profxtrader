@@ -27,7 +27,13 @@
 const ANTHROPIC_VERSION = '2023-06-01';
 const MODELS_URL = 'https://api.anthropic.com/v1/models?limit=100';
 const MESSAGES_URL = 'https://api.anthropic.com/v1/messages';
-const FALLBACK_MODEL = 'claude-sonnet-4-20250514'; // last resort only
+// Last-resort model, used only if the /v1/models discovery call fails. Must be
+// a CURRENT model id: the old dated snapshot (claude-sonnet-4-20250514) was
+// retired on 2026-06-15 and now 404s, which silently killed the Professor
+// whenever discovery hiccuped. `claude-sonnet-5` is the current Sonnet and the
+// natural fallback for this cost-tier feature. Discovery still prefers whatever
+// the account's newest Sonnet is; this only catches the discovery-failed path.
+const FALLBACK_MODEL = 'claude-sonnet-5';
 
 const HANDLER_BUDGET_MS = 9200;
 const DISCOVERY_BUDGET_MS = 2200;
@@ -114,7 +120,23 @@ async function callClaude(key, system, messages, maxTokens, deadline) {
       'x-api-key': key,
       'anthropic-version': ANTHROPIC_VERSION
     },
-    body: JSON.stringify({ model: model, max_tokens: maxTokens, system: system, messages: messages })
+    // Explicitly disable thinking. The newest Sonnet models (5, 4.6) run
+    // adaptive thinking by DEFAULT when the field is omitted, and max_tokens
+    // caps thinking + response text together. This function's per-mode budgets
+    // are deliberately tiny (live=220, followup=180, tag=200) so the whole
+    // budget can be consumed by thinking, truncating the coaching prose to
+    // nothing. The Professor writes short prose over numbers already computed
+    // in code — it has no use for a reasoning pass — so turning thinking off
+    // guarantees every token goes to the response. Safe here because model
+    // discovery only ever selects a Sonnet (disabled thinking is accepted on
+    // every Sonnet; only Fable rejects it, and Fable never matches /sonnet/i).
+    body: JSON.stringify({
+      model: model,
+      max_tokens: maxTokens,
+      system: system,
+      messages: messages,
+      thinking: { type: 'disabled' }
+    })
   }, remaining);
   if (!r.ok) throw new Error('anthropic upstream ' + r.status);
   const d = await r.json();

@@ -10,8 +10,31 @@
 // normalizes upstream OHLC into one shape and returns it. Every statistic in the
 // app is computed from these bars in deterministic client-side JS.
 //
-// GRACEFUL DEGRADATION: always HTTP 200. A missing key, a rate limit, or a slow
-// upstream returns { ok:false, reason } and the UI falls back to CSV upload.
+// GRACEFUL DEGRADATION: always HTTP 200 for data problems. A missing key, a
+// rate limit, or a slow upstream returns { ok:false, reason } and the UI falls
+// back to CSV upload. (Auth failures are the exception — see AUTH below.)
+//
+// AUTH: every function in this app that spends an upstream API call now sits
+// behind a Supabase sign-in, because most features are paywalled. This one
+// fetches billable Databento / Alpha Vantage data, so it verifies the caller's
+// Supabase access token (Authorization: Bearer <token>) against Supabase's own
+// /auth/v1/user endpoint — the same pattern checkout.js / portal.js /
+// professor.js use — and returns 401 for anonymous callers. The public
+// marketing page teases Replay with a small bundle of sample bars shipped in
+// the page itself (no call to this function), so gating here costs the
+// marketing page nothing while closing the endpoint to anonymous abuse.
+//
+// COST CONTROL: a shared in-memory response cache (cacheGet/cacheSet). The
+// first signed-in visitor to request a given symbol/interval/month pays the
+// upstream call; everyone asking for the same thing within the TTL is served
+// from memory. This is usually the bigger cost saver, since "load the most
+// recent ES 5min bars" is what most sessions ask for.
+//
+// HONEST CAVEAT: the cache is a plain module-level Map, not Redis/Postgres, so
+// it's scoped to one warm Lambda container — Netlify may run several at once,
+// each with its own cache, so the effective hit rate is best-effort, not
+// exact. Fine at this scale: zero new infra, zero dependencies, still a real
+// saving. Move it to Supabase only if the in-memory version proves insufficient.
 
 'use strict';
 
@@ -45,6 +68,58 @@ function clean(v, max) {
 
 function ok(body) {
   return { statusCode: 200, headers: HEADERS, body: JSON.stringify(body) };
+}
+
+// Auth failures return a real 401 (not the 200-with-reason envelope) so the
+// front end can tell "you're signed out" apart from "no data for that symbol"
+// and prompt a sign-in instead of offering the CSV fallback.
+function unauthorized(reason) {
+  return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ ok: false, reason: reason, requiresAuth: true }) };
+}
+
+// ---- auth ----------------------------------------------------------------
+// Verifies the caller's Supabase access token against Supabase's own
+// /auth/v1/user endpoint rather than decoding the JWT locally, so a
+// stolen/expired/tampered token is rejected by Supabase, not by weaker local
+// logic. Mirrors verifySupabaseUser in checkout.js / portal.js / professor.js.
+async function verifySupabaseUser(token, deadline) {
+  if (!token || !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return null;
+  const r = await fetchWithTimeout(process.env.SUPABASE_URL + '/auth/v1/user', {
+    headers: { Authorization: 'Bearer ' + token, apikey: process.env.SUPABASE_ANON_KEY }
+  }, Math.min(4000, deadline - Date.now()));
+  if (!r.ok) return null;
+  const d = await r.json();
+  return d && d.id ? d : null;
+}
+
+// ---- response cache ------------------------------------------------------
+// Module-level Map, scoped to one warm Lambda container (see HONEST CAVEAT in
+// the file header). Keyed by the exact request shape so two callers asking for
+// the same window share one upstream fetch. TTL matches the Cache-Control
+// max-age above (historical bars don't change), with a hard entry cap so a
+// long-lived container can't leak memory across many distinct symbols.
+const CACHE_TTL_MS = 15 * 60 * 1000;
+const CACHE_MAX_ENTRIES = 200;
+const _cache = new Map();
+
+function cacheKey(symbol, interval, month, full) {
+  return symbol + '|' + interval + '|' + (month || '') + '|' + (full ? '1' : '0');
+}
+
+function cacheGet(key) {
+  const hit = _cache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.ts > CACHE_TTL_MS) { _cache.delete(key); return null; }
+  return hit.body;
+}
+
+function cacheSet(key, body) {
+  if (_cache.size >= CACHE_MAX_ENTRIES) {
+    // Evict the oldest inserted entry (Map preserves insertion order).
+    const oldest = _cache.keys().next().value;
+    if (oldest !== undefined) _cache.delete(oldest);
+  }
+  _cache.set(key, { ts: Date.now(), body: body });
 }
 
 // ---- instrument catalogue -------------------------------------------------
@@ -292,6 +367,17 @@ exports.handler = async function (event) {
 
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: HEADERS, body: '' };
 
+  // Require a signed-in Supabase user for the whole endpoint (catalog listing
+  // included) — the app only ever calls this while authenticated, so there's
+  // no reason to leave any path open to anonymous callers.
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token) return unauthorized('Sign in to load market data.');
+  let user;
+  try { user = await verifySupabaseUser(token, deadline); }
+  catch (e) { return unauthorized('Could not verify your session. Sign in again.'); }
+  if (!user) return unauthorized('Your session has expired — sign in again.');
+
   let q = event.queryStringParameters || {};
   if (event.httpMethod === 'POST' && event.body) {
     try { q = Object.assign({}, q, JSON.parse(event.body)); } catch (e) { /* keep query params */ }
@@ -338,6 +424,14 @@ exports.handler = async function (event) {
     });
   }
 
+  // Serve a shared cached response if this exact window was fetched recently,
+  // before spending an upstream call. Only successful { ok:true } payloads are
+  // cached (cacheSet is called only on the success paths below), so an error
+  // never sticks.
+  const ck = cacheKey(symbol, interval, month, full);
+  const cached = cacheGet(ck);
+  if (cached) return ok(cached);
+
   // ---- futures: Databento ----
   if (inst.kind === 'futures') {
     const dbKey = process.env.DATABENTO_API_KEY;
@@ -346,7 +440,7 @@ exports.handler = async function (event) {
     }
     const res = await fetchDatabento(inst, month, dbKey, deadline);
     if (!res.ok) return ok({ ok: false, reason: res.reason });
-    return ok({
+    const body = {
       ok: true,
       symbol: symbol,
       month: month || null,
@@ -358,7 +452,9 @@ exports.handler = async function (event) {
       first: new Date(res.bars[0].t).toISOString(),
       last: new Date(res.bars[res.bars.length - 1].t).toISOString(),
       bars: res.bars
-    });
+    };
+    cacheSet(ck, body);
+    return ok(body);
   }
 
   // ---- FX / crypto: Alpha Vantage ----
@@ -392,7 +488,7 @@ exports.handler = async function (event) {
       return ok({ ok: false, reason: 'Not enough bars returned to seed a replay session.' });
     }
 
-    return ok({
+    const body = {
       ok: true,
       symbol: symbol,
       month: month || null,
@@ -404,7 +500,9 @@ exports.handler = async function (event) {
       first: new Date(bars[0].t).toISOString(),
       last: new Date(bars[bars.length - 1].t).toISOString(),
       bars: bars
-    });
+    };
+    cacheSet(ck, body);
+    return ok(body);
   } catch (e) {
     const timedOut = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || '')));
     return ok({

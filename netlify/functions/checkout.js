@@ -101,8 +101,10 @@ exports.handler = async function (event) {
     }
     params.set('metadata[supabase_user_id]', user.id);
     params.set('subscription_data[metadata][supabase_user_id]', user.id);
-    params.set('success_url', (siteUrl || '') + '/?checkout=success');
-    params.set('cancel_url', (siteUrl || '') + '/?checkout=cancelled');
+    // Return into the app (now at /app.html) after Checkout, not the marketing
+    // root — the user came from inside the signed-in app.
+    params.set('success_url', (siteUrl || '') + '/app.html?checkout=success');
+    params.set('cancel_url', (siteUrl || '') + '/app.html?checkout=cancelled');
     params.set('allow_promotion_codes', 'true');
 
     const r = await fetchWithTimeout(STRIPE_URL, {
