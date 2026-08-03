@@ -4194,24 +4194,51 @@ function rpDataInfo(meta) {
   rpUpdateFitNote();
 }
 
-/** Same bar-count math createSession() enforces (rpBarsFromDays, warmup+session+5),
- *  surfaced BEFORE the click instead of only after — so picking "1 week" lookback
- *  against a file that only has two days of bars shows the mismatch immediately,
- *  not as a dead-end error once you've already filled in the rest of the form. */
+// Descending — matches the <option> values on rp-lookback / rp-sessionlen. Kept
+// as plain arrays (not read from the DOM) so the fit order is explicit and
+// doesn't silently drift if an option's on-screen order ever changes.
+var RP_LOOKBACK_DAYS = [10, 5, 3, 1, 0.25];
+var RP_SESSION_DAYS = [5, 2, 1, 0.5];
+
+/** Same bar-count math createSession() enforces (rpBarsFromDays, warmup+session+5).
+ *  Rather than just reporting the mismatch after the fact, this SNAPS the two
+ *  selects to the largest combination that actually fits the loaded bars — the
+ *  trader picks a shape once, the app makes it work with what's on hand instead
+ *  of making them trial-and-error five lookback options against four session
+ *  lengths by hand. Runs on every load and every change to either select, so it
+ *  self-corrects immediately rather than needing a click to fail first. */
 function rpUpdateFitNote() {
   var el = $('rp-fitNote');
   if (!el) return;
   if (!rpBars || !rpBars.bars.length) { el.style.display = 'none'; return; }
   var tf = (state.barsMeta && state.barsMeta.baseTimeframeMin) || 5;
-  var warmup = rpBarsFromDays(parseFloat($('rp-lookback').value) || 3, tf);
-  var session = rpBarsFromDays(parseFloat($('rp-sessionlen').value) || 1, tf);
-  var need = warmup + session + 5;
   var have = rpBars.bars.length;
-  if (have >= need) { el.style.display = 'none'; return; }
+  var budget = have - 5;
+  var fits = function (lb, sl) { return rpBarsFromDays(lb, tf) + rpBarsFromDays(sl, tf) <= budget; };
+
+  var lbSel = $('rp-lookback'), slSel = $('rp-sessionlen');
+  var curLb = parseFloat(lbSel.value) || 3, curSl = parseFloat(slSel.value) || 1;
+  if (fits(curLb, curSl)) { el.style.display = 'none'; return; }
+
+  var best = null;
+  for (var i = 0; i < RP_LOOKBACK_DAYS.length && !best; i++) {
+    for (var j = 0; j < RP_SESSION_DAYS.length; j++) {
+      if (fits(RP_LOOKBACK_DAYS[i], RP_SESSION_DAYS[j])) { best = [RP_LOOKBACK_DAYS[i], RP_SESSION_DAYS[j]]; break; }
+    }
+  }
+
   el.style.display = '';
-  el.innerHTML = '<span class="excl">Not enough history for this shape:</span> loaded ' +
-    have.toLocaleString('en-US') + ' bars, this needs ' + need.toLocaleString('en-US') +
-    ' — pick a shorter "History before you start" or "Session length" above, or load more data.';
+  if (!best) {
+    el.innerHTML = '<span class="excl">Not enough history to run any session shape:</span> only ' +
+      have.toLocaleString('en-US') + ' bars loaded — load a wider CSV export, or a market with deeper ' +
+      'history, before starting.';
+    return;
+  }
+  lbSel.value = String(best[0]);
+  slSel.value = String(best[1]);
+  el.innerHTML = '<span class="pos">Adjusted to fit your ' + have.toLocaleString('en-US') + ' loaded bars:</span> ' +
+    '"History before you start" set to ' + lbSel.options[lbSel.selectedIndex].text.toLowerCase() +
+    ', "Session length" set to ' + slSel.options[slSel.selectedIndex].text.toLowerCase() + '.';
 }
 $('rp-lookback') && $('rp-lookback').addEventListener('change', rpUpdateFitNote);
 $('rp-sessionlen') && $('rp-sessionlen').addEventListener('change', rpUpdateFitNote);
