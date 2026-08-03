@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>ProFX Trading</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta name="theme-color" content="#0a0d16">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ProFX">
+<meta name="mobile-web-app-capable" content="yes">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <!-- Replay chart engine — real pan/zoom/crosshair candlestick charting.
      Pinned version, self-hosted-equivalent CDN (jsdelivr mirrors npm, same
@@ -225,6 +233,15 @@
   input.swatch::-webkit-color-swatch-wrapper{padding:1px}
   input.swatch::-webkit-color-swatch{border:0;border-radius:3px}
 
+  /* ---------- chart panes — every canvas in the app (Replay, Practice     */
+  /* Arena, Prop Challenge) shares these two classes instead of an inline   */
+  /* height, specifically so the mobile media query below can resize them.  */
+  /* An inline style="height:…" can't be overridden by a media query at any */
+  /* specificity, so the height has to live in CSS, not on the element.     */
+  .chart-canvas{width:100%;height:380px}
+  .chart-canvas-htf{width:100%;height:170px}
+  @media (min-width:1180px){ .chart-canvas{height:460px} }
+
   /* ---------- footer disclaimer ---------- */
   footer{color:var(--dim)!important;border-top:1px solid var(--border)!important}
 
@@ -243,6 +260,10 @@
     .mobile-top .mtitle{font-weight:800;letter-spacing:.04em}
     main{padding:18px 16px 80px}
     .row{grid-template-columns:1fr;gap:2px}.meta{text-align:left}
+    .chart-canvas{height:260px}
+    .chart-canvas-htf{height:130px}
+    button.tiny{padding:4px 8px;font-size:10.5px}
+    input.swatch{width:24px;height:22px}
   }
   @media print{.sidebar,.mobile-top,nav,.noprint{display:none}main{padding:0}}
 
@@ -599,6 +620,12 @@
         <input type="checkbox" id="cc-bordervisible"> <span style="font-size:11px;color:var(--muted)">Show border</span></label>
       <label class="check" style="margin:0;border:0;padding:0">
         <input type="checkbox" id="cc-wickvisible" checked> <span style="font-size:11px;color:var(--muted)">Show wick</span></label>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)">Chart frame
+        <select id="cc-chartborder" style="width:auto">
+          <option value="#232b42" selected>Default</option>
+          <option value="#000000">Black</option>
+          <option value="#ffffff">White</option>
+        </select></label>
       <button class="btn ghost tiny" id="cc-reset" type="button">Reset colors</button>
     </div>
   </div>
@@ -608,20 +635,22 @@
       <button class="btn ghost tiny" id="rp-tool-none" type="button" data-tool="none">Cursor</button>
       <button class="btn ghost tiny" id="rp-tool-trend" type="button" data-tool="trend">Trendline</button>
       <button class="btn ghost tiny" id="rp-tool-rect" type="button" data-tool="rect">Rectangle</button>
+      <button class="btn ghost tiny" id="rp-tool-fib" type="button" data-tool="fib">Fib retracement</button>
+      <button class="btn ghost tiny" id="rp-tool-ray" type="button" data-tool="ray">Ray</button>
       <button class="btn ghost tiny" id="rp-tool-marker" type="button" data-tool="marker">Rejection marker</button>
       <label class="check" style="margin:0 0 0 8px;border:0;padding:0">
         <input type="checkbox" id="rp-killzones"> <span style="font-size:11px;color:var(--muted)">Shade kill zones</span></label>
       <button class="btn ghost tiny" id="rp-clear-drawings" type="button" style="margin-left:auto">Clear drawings</button>
     </div>
     <div style="position:relative">
-      <div id="rp-canvas" style="width:100%;height:380px"></div>
+      <div id="rp-canvas" class="chart-canvas"></div>
       <div id="rp-canvas-empty" class="note" style="position:absolute;left:14px;top:10px;margin:0;pointer-events:none">Load bars and start a session.</div>
       <div id="rp-canvas-stamp-l" class="note" style="position:absolute;left:8px;bottom:2px;margin:0;pointer-events:none;font-size:11px"></div>
       <div id="rp-canvas-stamp-r" class="note" style="position:absolute;right:8px;bottom:2px;margin:0;pointer-events:none;font-size:11px"></div>
     </div>
     <div class="note" id="rp-toolNote" style="margin-top:6px"></div>
     <div style="position:relative;margin-top:6px">
-      <div id="rp-canvas-htf" style="width:100%;height:170px"></div>
+      <div id="rp-canvas-htf" class="chart-canvas-htf"></div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
       <button class="btn tiny" id="rp-play" disabled>Play</button>
@@ -916,7 +945,7 @@
   <h2>Round <span class="note" id="gm-ident"></span></h2>
   <div class="card" style="padding:8px">
     <div style="position:relative">
-      <div id="gm-canvas" style="width:100%;height:340px"></div>
+      <div id="gm-canvas" class="chart-canvas"></div>
       <div id="gm-canvas-empty" class="note" style="position:absolute;left:14px;top:10px;margin:0;pointer-events:none">Click "Start round 1" above to deal a chart.</div>
     </div>
   </div>
@@ -1039,7 +1068,7 @@
   <h2>Chart <span class="note" id="chal-ident"></span></h2>
   <div class="card" style="padding:8px">
     <div style="position:relative">
-      <div id="chal-canvas" style="width:100%;height:340px"></div>
+      <div id="chal-canvas" class="chart-canvas"></div>
       <div id="chal-canvas-empty" class="note" style="position:absolute;left:14px;top:10px;margin:0;pointer-events:none">Load bars and start a challenge.</div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
@@ -5163,6 +5192,10 @@ var RPCharts = (function () {
     wickUpColor: '#22c55e', wickDownColor: '#ef4444', wickVisible: true,
     borderUpColor: '#22c55e', borderDownColor: '#ef4444', borderVisible: false,
   };
+  // Kept separate from `theme` above — this is a chart-level option
+  // (price/time scale axis lines), not a candlestick series option, so it
+  // gets applied via chart.applyOptions(), never series.applyOptions().
+  var chartBorderColor = '#232b42';
 
   /** Custom series primitive: shaded price-range boxes for open FVGs.
    *  Lightweight Charts calls updateAllViews() before every repaint (pan,
@@ -5282,8 +5315,8 @@ var RPCharts = (function () {
       layout: { background: { color: 'transparent' }, textColor: '#8b96b3',
                 fontFamily: 'ui-monospace,SF Mono,Menlo,Consolas,monospace', fontSize: 10 },
       grid: { vertLines: { color: 'rgba(57,67,95,.35)' }, horzLines: { color: 'rgba(57,67,95,.35)' } },
-      rightPriceScale: { borderColor: '#232b42' },
-      timeScale: { borderColor: '#232b42', timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderColor: chartBorderColor },
+      timeScale: { borderColor: chartBorderColor, timeVisible: true, secondsVisible: false },
       crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     });
     var series = chart.addCandlestickSeries(Object.assign({}, theme));
@@ -5300,10 +5333,19 @@ var RPCharts = (function () {
    *  Practice Arena, Prop Challenge — whichever have been created this
    *  session) and remembers it so panes created afterward pick it up too. */
   function setTheme(t) {
-    theme = Object.assign({}, theme, t || {});
-    Object.keys(panes).forEach(function (k) { panes[k].series.applyOptions(theme); });
+    t = t || {};
+    if (t.chartBorderColor) chartBorderColor = t.chartBorderColor;
+    theme = Object.assign({}, theme, t);
+    delete theme.chartBorderColor;   // not a candlestick series option — never forwarded to applyOptions
+    Object.keys(panes).forEach(function (k) {
+      panes[k].series.applyOptions(theme);
+      panes[k].chart.applyOptions({
+        rightPriceScale: { borderColor: chartBorderColor },
+        timeScale: { borderColor: chartBorderColor }
+      });
+    });
   }
-  function getTheme() { return Object.assign({}, theme); }
+  function getTheme() { return Object.assign({}, theme, { chartBorderColor: chartBorderColor }); }
 
   function clearLines(pane) {
     pane.priceLines.forEach(function (l) { try { pane.series.removePriceLine(l); } catch (e) {} });
@@ -5327,6 +5369,15 @@ var RPCharts = (function () {
   function setDrawings(paneKey, shapes) {
     var pane = panes[paneKey]; if (!pane) return;
     pane.draw.setShapes(shapes);
+    // setShapes() only updates the primitive's own internal data — Lightweight
+    // Charts has no "this primitive changed, please repaint" signal, so without
+    // a nudge the new shapes sit invisible until something ELSE happens to
+    // trigger a repaint (e.g. the very next mouse move over the chart, which is
+    // why this looked like it "sometimes" worked). setData()/createPriceLine()
+    // are real API calls that repaint themselves; a raw primitive mutation
+    // isn't. An empty applyOptions() call changes nothing visible but is enough
+    // to make the chart invalidate and redraw immediately.
+    pane.series.applyOptions({});
   }
   function getPane(paneKey) { return panes[paneKey] || null; }
 
@@ -5341,6 +5392,7 @@ var CHART_THEME_DEFAULT = {
   upColor: '#22c55e', downColor: '#ef4444',
   wickUpColor: '#22c55e', wickDownColor: '#ef4444', wickVisible: true,
   borderUpColor: '#22c55e', borderDownColor: '#ef4444', borderVisible: false,
+  chartBorderColor: '#232b42',
 };
 function rpChartTheme() { return Object.assign({}, CHART_THEME_DEFAULT, state.chartTheme || {}); }
 function rpSyncThemeInputs() {
@@ -5350,6 +5402,7 @@ function rpSyncThemeInputs() {
   $('cc-borderup').value = t.borderUpColor; $('cc-borderdown').value = t.borderDownColor;
   $('cc-bordervisible').checked = !!t.borderVisible;
   $('cc-wickvisible').checked = t.wickVisible !== false;
+  $('cc-chartborder').value = t.chartBorderColor;
 }
 function rpSetThemeField(key, val) {
   state.chartTheme = rpChartTheme();
@@ -5364,6 +5417,9 @@ function rpSetThemeField(key, val) {
   });
 [['cc-bordervisible', 'borderVisible'], ['cc-wickvisible', 'wickVisible']].forEach(function (pair) {
   $(pair[0]) && $(pair[0]).addEventListener('change', function () { rpSetThemeField(pair[1], $(pair[0]).checked); });
+});
+$('cc-chartborder') && $('cc-chartborder').addEventListener('change', function () {
+  rpSetThemeField('chartBorderColor', $('cc-chartborder').value);
 });
 $('cc-reset') && $('cc-reset').addEventListener('click', function () {
   state.chartTheme = Object.assign({}, CHART_THEME_DEFAULT);
@@ -5496,22 +5552,31 @@ function rpWireLtfInteractions(pane) {
 /* ---------------------------------------------------------------- */
 var rpTool = 'none';
 var rpUserDrawings = [];
-var rpDrawStart = null;   // {t, price} while a trendline/rectangle is being dragged out
+var rpDrawStart = null;   // {t, price} while a two-click tool (trend/rect/fib) is mid-placement
+var rpLastLtfView = null; // cached so a tool click can redraw immediately without waiting for the next rpDraw()
 
-var TOOL_COLORS = { trend: '#eab308', rect: '#818cf8', marker: '#ef4444' };
+var TOOL_COLORS = { trend: '#eab308', rect: '#818cf8', marker: '#ef4444', fib: '#22d3ee', ray: '#818cf8' };
+var TOOL_LABELS = { trend: 'trendline', rect: 'rectangle', fib: 'fib retracement', ray: 'ray', marker: 'rejection marker' };
+var TWO_CLICK_TOOLS = { trend: 1, rect: 1, fib: 1 };
+// 0.705 is the commonly-cited OTE "sweet spot" center of the 0.618-0.79 zone
+// (see the Premium/Discount & OTE lesson) — highlighted here the same way.
+var FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.705, 0.79, 1];
+var FIB_OTE = { 0.618: 1, 0.705: 1, 0.79: 1 };
 
 function rpSetTool(tool) {
   rpTool = rpTool === tool ? 'none' : tool;
-  ['none', 'trend', 'rect', 'marker'].forEach(function (t) {
-    $('rp-tool-' + (t === 'none' ? 'none' : t)).classList.toggle('ghost', rpTool !== t);
+  rpDrawStart = null;
+  ['none', 'trend', 'rect', 'fib', 'ray', 'marker'].forEach(function (t) {
+    $('rp-tool-' + t).classList.toggle('ghost', rpTool !== t);
   });
   var pane = RPCharts.getPane('ltf');
   if (pane) pane.chart.chartElement().style.cursor = rpTool === 'none' ? 'default' : 'crosshair';
   $('rp-toolNote').textContent = rpTool === 'none' ? '' :
     rpTool === 'marker' ? 'Click a bar to drop a rejection marker.' :
-    'Click a start point, then click again to finish the ' + (rpTool === 'trend' ? 'trendline' : 'rectangle') + '.';
+    rpTool === 'ray' ? 'Click a price to draw a ray from there to now — it keeps extending as you step forward.' :
+    'Click a start point, then click again to finish the ' + TOOL_LABELS[rpTool] + '. Esc cancels.';
 }
-['none', 'trend', 'rect', 'marker'].forEach(function (t) {
+['none', 'trend', 'rect', 'fib', 'ray', 'marker'].forEach(function (t) {
   var btn = $('rp-tool-' + t);
   btn && btn.addEventListener('click', function () { rpSetTool(t); });
 });
@@ -5520,6 +5585,13 @@ $('rp-clear-drawings') && $('rp-clear-drawings').addEventListener('click', funct
   rpRedrawDrawings(RPCharts.getPane('ltf'), null);
 });
 $('rp-killzones') && $('rp-killzones').addEventListener('change', function () { rpDraw(); });
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && rpDrawStart) {
+    rpDrawStart = null;
+    $('rp-toolNote').textContent = 'Cancelled. Click a start point, then click again to finish the ' +
+      TOOL_LABELS[rpTool] + '. Esc cancels.';
+  }
+});
 
 function rpWireDrawingTool(pane) {
   pane.chart.subscribeClick(function (param) {
@@ -5534,21 +5606,25 @@ function rpWireDrawingTool(pane) {
       rpRedrawDrawings(pane, null);
       return;
     }
+    if (rpTool === 'ray') {
+      rpUserDrawings.push({ type: 'ray', t1: time, p1: price, t2: time, p2: price, color: TOOL_COLORS.ray });
+      rpRedrawDrawings(pane, null);
+      return;
+    }
+    if (!TWO_CLICK_TOOLS[rpTool]) return;
     if (!rpDrawStart) {
       rpDrawStart = { t: time, p: price };
-      $('rp-toolNote').textContent = 'Click the end point to finish the ' +
-        (rpTool === 'trend' ? 'trendline' : 'rectangle') + '.';
+      $('rp-toolNote').textContent = 'Click the end point to finish the ' + TOOL_LABELS[rpTool] + '. Esc cancels.';
       return;
     }
     rpUserDrawings.push({
-      type: rpTool === 'trend' ? 'trend' : 'rect',
-      t1: rpDrawStart.t, p1: rpDrawStart.p, t2: time, p2: price,
+      type: rpTool, t1: rpDrawStart.t, p1: rpDrawStart.p, t2: time, p2: price,
       color: TOOL_COLORS[rpTool] || '#818cf8'
     });
     rpDrawStart = null;
     rpRedrawDrawings(pane, null);
     $('rp-toolNote').textContent = 'Click a start point, then click again to finish the ' +
-      (rpTool === 'trend' ? 'trendline' : 'rectangle') + '.';
+      TOOL_LABELS[rpTool] + '. Esc cancels.';
   });
 }
 
@@ -5593,10 +5669,35 @@ function rpKillzoneShapes(view) {
   return out;
 }
 
+/** A fib placement stores just its two anchor points; at render time it
+ *  expands into one horizontal line per FIB_LEVELS ratio, each stretched to
+ *  the current last-visible-bar time so the levels read edge-to-edge like a
+ *  normal retracement tool, not just the width of the original click-drag. */
+function rpExpandFib(d, endTime) {
+  var span = d.p2 - d.p1;   // signed: 0% anchors at the first click, 100% at the second
+  return FIB_LEVELS.map(function (r) {
+    var price = d.p1 + span * r;
+    return {
+      type: 'trend', t1: d.t1, p1: price, t2: endTime, p2: price,
+      color: FIB_OTE[r] ? '#eab308' : '#22d3ee',
+      label: (r * 100).toFixed(1) + '%' + (FIB_OTE[r] ? ' OTE' : '')
+    };
+  });
+}
+
 function rpRedrawDrawings(pane, view) {
   if (!pane) return;
+  if (view) rpLastLtfView = view; else view = rpLastLtfView;
   var kz = view ? rpKillzoneShapes(view) : [];
-  RPCharts.setDrawings('ltf', kz.concat(rpUserDrawings));
+  var endTime = view && view.length ? Math.floor(view[view.length - 1].t / 1000) : null;
+  var expanded = [];
+  rpUserDrawings.forEach(function (d) {
+    if (d.type === 'fib') { if (endTime != null) expanded.push.apply(expanded, rpExpandFib(d, endTime)); }
+    else if (d.type === 'ray') {
+      if (endTime != null) expanded.push({ type: 'trend', t1: d.t1, p1: d.p1, t2: endTime, p2: d.p1, color: d.color });
+    } else expanded.push(d);
+  });
+  RPCharts.setDrawings('ltf', kz.concat(expanded));
 }
 
 function rpDrawPane(containerId, tfMin, paneH, opts) {
@@ -6054,6 +6155,12 @@ function rpDrawingsContext() {
     } else if (d.type === 'rect') {
       lines.push('- a rectangle spanning ' + Math.min(d.p1, d.p2).toFixed(2) + ' to ' + Math.max(d.p1, d.p2).toFixed(2) +
         ' — the trader may be marking a fair value gap, order block, or liquidity zone by hand');
+    } else if (d.type === 'fib') {
+      lines.push('- a fib retracement anchored ' + d.p1.toFixed(2) + ' to ' + d.p2.toFixed(2) +
+        ' (0% at the first point, 100% at the second) — the OTE 0.618-0.79 zone falls at ' +
+        (d.p1 + (d.p2 - d.p1) * 0.618).toFixed(2) + ' to ' + (d.p1 + (d.p2 - d.p1) * 0.79).toFixed(2));
+    } else if (d.type === 'ray') {
+      lines.push('- a horizontal ray at price ' + d.p1.toFixed(2));
     } else {
       lines.push('- a trendline from ' + d.p1.toFixed(2) + ' to ' + d.p2.toFixed(2));
     }
@@ -6628,6 +6735,16 @@ if (state.settings && state.settings.equity) {
 }
 recompute();
 authInit();
+
+// Installable-app support: registers the shell-caching service worker (see
+// sw.js) so "Add to Home Screen" / "Install App" works and the app can
+// launch offline. Registration failure (unsupported browser, blocked by an
+// extension) is silently non-fatal — the app works identically without it.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function () {});
+  });
+}
 
 /* ---------------------------------------------------------------- */
 /* COURSES — a week-structured Foundational Track built on top of    */

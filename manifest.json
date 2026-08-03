@@ -1,0 +1,17 @@
+{
+  "name": "ProFX Trading — Deterministic Edge Lab",
+  "short_name": "ProFX",
+  "description": "Deterministic backtesting, journaling, and risk tooling for futures/FX/crypto traders — with an AI coaching layer that never computes a number, only explains ones already computed in code.",
+  "start_url": "/app.html",
+  "id": "/app.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0d16",
+  "theme_color": "#0a0d16",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "categories": ["finance", "education", "productivity"]
+}
