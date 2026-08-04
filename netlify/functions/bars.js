@@ -54,6 +54,7 @@ const HEADERS = {
   'Cache-Control': 'public, max-age=900',   // bars are historical; cache 15 min
   'X-Content-Type-Options': 'nosniff'
 };
+const NO_STORE_HEADERS = Object.assign({}, HEADERS, { 'Cache-Control': 'no-store' });
 
 // ---- utils ---------------------------------------------------------------
 
@@ -72,15 +73,23 @@ function clean(v, max) {
   return s;
 }
 
+// Only a genuine { ok:true, bars:[...] } payload is safe to cache publicly —
+// bar data for a given symbol/interval/window never changes. An { ok:false }
+// error envelope (rate limit, upstream timeout, bad params) must never carry
+// the same long-lived public Cache-Control: a transient failure cached for 15
+// minutes in the browser (or any intermediate CDN) means every retry during
+// that window is served the stale failure without ever touching the network
+// again, masking the fact that the underlying problem may already be fixed.
 function ok(body) {
-  return { statusCode: 200, headers: HEADERS, body: JSON.stringify(body) };
+  const headers = body && body.ok ? HEADERS : NO_STORE_HEADERS;
+  return { statusCode: 200, headers: headers, body: JSON.stringify(body) };
 }
 
 // Auth failures return a real 401 (not the 200-with-reason envelope) so the
 // front end can tell "you're signed out" apart from "no data for that symbol"
 // and prompt a sign-in instead of offering the CSV fallback.
 function unauthorized(reason) {
-  return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ ok: false, reason: reason, requiresAuth: true }) };
+  return { statusCode: 401, headers: NO_STORE_HEADERS, body: JSON.stringify({ ok: false, reason: reason, requiresAuth: true }) };
 }
 
 // ---- auth ----------------------------------------------------------------
