@@ -9106,7 +9106,8 @@ function rpCompeteOnSeed(idx) {
     rpFeaturedSeedActive = null;   // one-shot regardless of outcome
     if (def) {
       var ok = s.cfg.seed === def.seed && s.cfg.symbol === def.symbol &&
-        state.barsMeta && state.barsMeta.baseTimeframeMin === LB_INTERVAL_MIN[def.interval];
+        rpFetchSpec && rpFetchSpec.symbol === def.symbol &&
+        rpFetchSpec.from === def.from && rpFetchSpec.to === def.to;
       s.featuredSeed = ok ? def : null;
     } else {
       s.featuredSeed = null;
