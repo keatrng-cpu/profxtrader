@@ -39,8 +39,14 @@
 'use strict';
 
 const AV_URL = 'https://www.alphavantage.co/query';
-const HANDLER_BUDGET_MS = 9200;   // stay under Netlify's ~10s cap
-const UPSTREAM_TIMEOUT_MS = 8000;
+// Netlify's real function timeout is 60s on every plan (verified against
+// docs.netlify.com/build/functions/configuration — it is NOT the ~10s this
+// used to assume, which caused this exact endpoint to abort large Databento
+// pulls prematurely and report "Databento request timed out" even though
+// Databento would have answered within a few more seconds). Same root cause
+// and same fix as professor.js's HANDLER_BUDGET_MS earlier this session.
+const HANDLER_BUDGET_MS = 55000;
+const UPSTREAM_TIMEOUT_MS = 50000;
 const MAX_BARS = 6000;            // plenty for a replay session; keeps payload sane
 
 const HEADERS = {
