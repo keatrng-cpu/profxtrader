@@ -190,6 +190,7 @@
     margin-left:6px;vertical-align:1px}
   .tag.pos{background:rgba(34,197,94,.15);color:var(--green)!important}
   .tag.neg{background:rgba(239,68,68,.15);color:var(--red)!important}
+  .tag.warn{background:rgba(234,179,8,.15);color:var(--warn)!important}
 
   /* ---------- bar chart (R distribution etc.) ---------- */
   .bars{display:flex;align-items:flex-end;gap:5px;height:120px;margin-top:12px}
@@ -330,6 +331,7 @@
     <button role="tab" data-tab="bench" aria-selected="false"><span class="ic">◈</span>Bench</button>
     <button role="tab" data-tab="risk" aria-selected="false"><span class="ic">◉</span>Risk lab</button>
     <button role="tab" data-tab="replay" aria-selected="false"><span class="ic">▶</span>Replay</button>
+    <button role="tab" data-tab="proofs" aria-selected="false"><span class="ic">✓</span>Proofs</button>
     <div class="nav-label">Learn</div>
     <button role="tab" data-tab="professor" aria-selected="false"><span class="ic">✦</span>Professor</button>
     <button role="tab" data-tab="desk" aria-selected="false"><span class="ic">◍</span>Session desk</button>
@@ -340,6 +342,8 @@
     <button role="tab" data-tab="games" aria-selected="false"><span class="ic">◎</span>Practice Arena</button>
     <button role="tab" data-tab="progress" aria-selected="false"><span class="ic">◆</span>Progress</button>
     <button role="tab" data-tab="challenge" aria-selected="false"><span class="ic">⛨</span>Prop Challenge</button>
+    <div class="nav-label">Compete</div>
+    <button role="tab" data-tab="leaderboard" aria-selected="false"><span class="ic">✪</span>Leaderboard</button>
   </nav>
 </aside>
 
@@ -401,6 +405,12 @@
       <div><label for="f-stop">Initial stop</label><input id="f-stop" inputmode="decimal"></div>
       <div><label for="f-exit">Exit</label><input id="f-exit" inputmode="decimal"></div>
       <div><label for="f-pnl">Net P&amp;L ($)</label><input id="f-pnl" inputmode="decimal"></div>
+      <div><label for="f-source">Source</label>
+        <select id="f-source">
+          <option value="journal" selected>Journal</option>
+          <option value="live">Live (real account)</option>
+        </select>
+      </div>
     </div>
     <div class="grid g3" id="tagFields" style="margin-top:12px"></div>
     <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -408,6 +418,8 @@
       <span class="note" id="addMsg"></span>
     </div>
   </div>
+
+  <div class="card" id="liveLeakWarn" style="display:none;border-color:var(--red);background:rgba(239,68,68,.08)"></div>
 
   <h2>Write it how you'd say it</h2>
   <div class="card">
@@ -423,6 +435,14 @@
   </div>
 
   <h2>Import</h2>
+  <div class="grid g3" style="margin-bottom:10px">
+    <div><label for="importSource">Tag imported trades as</label>
+      <select id="importSource">
+        <option value="journal" selected>Journal</option>
+        <option value="live">Live (real account)</option>
+      </select>
+    </div>
+  </div>
   <div class="drop" id="drop" tabindex="0" role="button">
     Drop a TradeZella CSV export or a saved ProFX Trading file here — nothing leaves this page
   </div>
@@ -484,6 +504,18 @@
   <h2>Confirmed rules</h2>
   <ul class="clean" id="b-confirmed"></ul>
 
+  <h2>Edge decay check</h2>
+  <ul class="clean" id="b-decay"></ul>
+  <div class="note">For every confirmed rule, its held-out (post walk-forward-split) expectancy is
+    compared against its overall figure fresh on every render. A rule only shows up here if it still
+    clears every gate above it — sample size, permutation p-value, FDR correction, positive 95% CI floor
+    — but its most recent trades are pulling its held-out expectancy down. That's deliberate: a rule whose
+    held-out expectancy has actually fallen to zero or below already fails the walk-forward check and
+    drops out of Confirmed rules on its own — this card exists to catch decay <em>before</em> that happens,
+    not after. It needs at least 5 held-out trades to speak at all; below that, a rule's silence here means
+    "not enough recent data to judge," not "the edge is intact." With small trade counts, treat every flag
+    as a lead to re-test, not a verdict.</div>
+
   <h2>Do not take</h2>
   <ul class="clean" id="b-leaks"></ul>
 
@@ -531,6 +563,38 @@
     <div class="scroll"><table id="r-streak"><thead><tr><th>Losing run</th><th class="num">P(at least one in horizon)</th></tr></thead><tbody></tbody></table></div>
     <div class="scroll"><table id="r-rec"><thead><tr><th>Drawdown</th><th class="num">Gain needed to recover</th></tr></thead><tbody></tbody></table></div>
   </div>
+
+  <h2>Will I pass a prop challenge?</h2>
+  <div class="card grid g4">
+    <div><label for="wip-preset">Preset</label><select id="wip-preset">
+      <option value="eval50k" selected>$50k Evaluation — 8% target · 5% daily loss · 10% trailing DD</option>
+      <option value="combine50k">$50k Funded Combine — 6% target · 3% daily loss · 4% static max DD</option>
+      <option value="custom">Custom numbers</option>
+    </select></div>
+    <div><label for="wip-equity">Account size ($)</label><input id="wip-equity" value="50000" inputmode="decimal" disabled></div>
+    <div><label for="wip-target">Profit target (%)</label><input id="wip-target" value="8" inputmode="decimal" disabled></div>
+    <div><label for="wip-daily">Daily loss limit (%)</label><input id="wip-daily" value="5" inputmode="decimal" disabled></div>
+    <div><label for="wip-dd">Max drawdown (%)</label><input id="wip-dd" value="10" inputmode="decimal" disabled></div>
+    <div><label for="wip-ddmode">Drawdown type</label><select id="wip-ddmode" disabled>
+      <option value="trailing" selected>Trailing (off peak equity)</option>
+      <option value="static">Static (off starting balance)</option>
+    </select></div>
+    <div><label for="wip-risk">Risk per trade (%)</label><input id="wip-risk" value="0.5" inputmode="decimal"></div>
+    <div><label for="wip-horizon">Max trades per attempt</label><input id="wip-horizon" value="400" inputmode="decimal"></div>
+  </div>
+
+  <div class="strip" id="wip-stats" style="margin-top:10px"></div>
+  <div class="card" style="margin-top:10px"><div id="wip-fan"></div></div>
+  <div class="note" id="wip-cadenceNote"></div>
+  <div class="note">Same resampling engine as the simulation above — your own R-multiples, reordered
+    thousands of times — but each simulated attempt is checked against the daily-loss, drawdown, and
+    profit-target thresholds in the same order a live challenge enforces them, and stops the instant one
+    hits. "Days" are modeled as a fixed number of trades taken from your own historical trading cadence,
+    not calendar dates — a resampled path has no dates of its own.</div>
+  <div style="margin-top:10px">
+    <button class="btn ghost tiny" id="wip-json">Download JSON</button>
+    <button class="btn ghost tiny" id="wip-txt">Download summary</button>
+  </div>
 </section>
 
 <!-- ───────────────────────────── REPLAY ───────────────────────────── -->
@@ -565,6 +629,14 @@
       window); intraday FX/crypto only covers recent trading — for a specific past date at an intraday
       timeframe, drop your own CSV below instead.</div>
     <div class="note" id="rp-avNote" style="display:none" aria-live="polite"></div>
+  </div>
+
+  <div class="card" style="margin-top:12px" id="rp-featuredCard">
+    <div class="note" style="margin:0 0 8px">Or skip manual loading and <b>compete on a featured seed</b> — a
+      pinned symbol, exact date range, and random seed everyone gets the identical sealed slice of. One click
+      loads the exact bars, sets the seed, and opens the session in Blind mode.</div>
+    <div id="rp-featuredSeeds" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    <div class="note" id="rp-featuredMsg" style="margin-top:8px" aria-live="polite"></div>
   </div>
 
   <div class="drop" id="rp-drop" tabindex="0" role="button" style="margin-top:12px">
@@ -685,6 +757,8 @@
         <input type="checkbox" id="rp-mk-sweeps" checked> <span style="font-size:11px;color:var(--muted)">Sweeps</span></label>
       <label class="check" style="margin:0;border:0;padding:0">
         <input type="checkbox" id="rp-mk-liquidity" checked> <span style="font-size:11px;color:var(--muted)">Resting liquidity</span></label>
+      <label class="check" style="margin:0;border:0;padding:0">
+        <input type="checkbox" id="rp-mk-edge" checked> <span style="font-size:11px;color:var(--muted)">Confirmed edge</span></label>
     </div>
     <div class="note" style="margin:6px 0 0" id="rp-chart1-label"><b>Chart 1</b> · primary — the only chart you trade from</div>
     <div style="position:relative">
@@ -841,6 +915,30 @@
   <div style="margin-top:10px"><button class="btn" id="rp-commit" disabled>Add session to ledger</button>
     <span class="note" id="rp-commitMsg" aria-live="polite"></span></div>
 
+  <h2>Publish as a strategy proof</h2>
+  <div class="card">
+    <div class="note" id="pf-proofElig" style="margin:0">Close a session ("End &amp; reveal") to publish it as a strategy proof.</div>
+    <div id="pf-proofForm" style="display:none">
+      <div class="strip" id="pf-proofPreview" style="margin-bottom:12px"></div>
+      <div class="grid g2">
+        <div><label for="pf-proofTitle">Title</label><input id="pf-proofTitle" placeholder="e.g. NQ 5m HTF-LTF confirmed entry"></div>
+        <div><label for="pf-proofAuthor">Credited as</label><input id="pf-proofAuthor" placeholder="defaults to your email name"></div>
+      </div>
+      <div style="margin-top:10px">
+        <label for="pf-proofDesc">Description <span class="mut">optional</span></label>
+        <textarea id="pf-proofDesc" style="width:100%;min-height:60px" placeholder="What were you testing? Any context worth adding."></textarea>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn" id="pf-proofPublish">Publish proof</button>
+        <span class="note" id="pf-proofMsg" aria-live="polite"></span>
+      </div>
+      <div class="note">Symbol, seed, session config, and every result figure above are read straight from
+        this closed session — there's no field here where a number can be typed in. Publishing also stores
+        the exact fetch window, so any signed-in visitor can re-pull identical bars from the same
+        market-data source and open the identical starting point for themselves.</div>
+    </div>
+  </div>
+
   <h2>Planned vs realized</h2>
   <div class="strip" id="rp-plan"></div>
   <div class="note">If realized consistently falls short of planned, that gap has a name: cutting
@@ -854,6 +952,21 @@
 
   <h2>Excursion analysis</h2>
   <div id="rp-ex"></div>
+</section>
+
+<!-- ───────────────────────────── PROOFS ───────────────────────────── -->
+<section id="tab-proofs" hidden>
+  <h2>Published strategy proofs</h2>
+  <div class="note" style="margin:0 0 10px">Every proof below carries the exact seed, symbol, and session
+    configuration it was traded with — not a screenshot. "Verify" opens a fresh Replay session built from
+    the identical seed and identical bars, refetched live from the same market-data source used originally.
+    <b>Verifying reproduces the same starting point and revealed bars, not the same trade outcomes</b> —
+    trade decisions were the trader's own and are not replayed automatically.</div>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+    <button class="btn ghost tiny" id="pf-refresh">Refresh</button>
+    <span class="note" id="pf-listMsg" style="margin:0" aria-live="polite"></span>
+  </div>
+  <div id="pf-list"></div>
 </section>
 
 <!-- ───────────────────────────── PROFESSOR ───────────────────────────── -->
@@ -896,6 +1009,53 @@
   <h2>Curriculum</h2>
   <div style="margin-bottom:10px" id="p-tracks"></div>
   <div id="p-lessons"></div>
+
+  <h2>Community lessons <span class="note" id="cl-communityCount"></span></h2>
+  <div class="note" style="margin:0 0 10px">Written by other traders using this app, in the same
+    mechanism / decision-rule / trigger-threshold format as the built-in curriculum above — reviewed
+    before it appears here, and always labeled separately from built-in content. Any "compute source"
+    a contributor pastes in is shown as reference text only; nothing on this page ever executes it.</div>
+  <div id="cl-community"></div>
+
+  <h2>Submit a lesson</h2>
+  <div class="card">
+    <div class="note" style="margin:0 0 10px">Same structured format as the curriculum above. Submissions
+      are queued as <b>pending</b> for manual review — there is no self-approve step. Once approved it
+      appears under Community, credited to the display name below.</div>
+    <div class="note excl" id="cl-signedOutMsg">Sign in to submit a lesson.</div>
+    <div id="cl-form">
+      <div class="grid g3">
+        <div><label for="cl-track">Track</label><select id="cl-track"></select></div>
+        <div><label for="cl-name">Display name</label><input id="cl-name" placeholder="How you'll be credited"></div>
+        <div><label for="cl-title">Title</label><input id="cl-title" placeholder="R is the only unit that compares"></div>
+      </div>
+      <div style="margin-top:12px">
+        <label for="cl-mechanism">Mechanism — how it actually works</label>
+        <textarea id="cl-mechanism" placeholder="The underlying mechanic, and why it matters..."></textarea>
+      </div>
+      <div style="margin-top:12px">
+        <label for="cl-rule">Decision rule</label>
+        <textarea id="cl-rule" placeholder="The concrete rule to follow because of that mechanism..."></textarea>
+      </div>
+      <div style="margin-top:12px">
+        <label for="cl-trigger">Trigger threshold</label>
+        <textarea id="cl-trigger" placeholder="Do X when Y crosses Z..."></textarea>
+      </div>
+      <div style="margin-top:12px">
+        <label for="cl-compute">Compute source (optional, advanced)</label>
+        <textarea id="cl-compute" placeholder="Optional: a short JS expression using report/ctx the way built-in lessons do. Advanced users only, not required — shown as reference text, never executed."></textarea>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn" id="cl-submitBtn">Submit for review</button>
+        <span class="note" id="cl-submitMsg" style="margin:0"></span>
+      </div>
+    </div>
+  </div>
+
+  <h2>Your submissions</h2>
+  <div class="card">
+    <div id="cl-mine" class="note">Sign in to see your submissions.</div>
+  </div>
 </section>
 
 <!-- ───────────────────────────── COURSES ───────────────────────────── -->
@@ -1197,6 +1357,39 @@
   <div class="card" id="chal-summary">
     <div class="note" style="margin:0">Finishes — pass, fail, or ended early — show the full session summary
       here, computed by the same Replay engine, not recomputed by hand.</div>
+  </div>
+</section>
+
+<section id="tab-leaderboard" hidden>
+  <h2>Leaderboard <span class="note" style="font-weight:400">ghost mode — same sealed slice, ranked blind</span></h2>
+  <div class="note" style="margin:0 0 14px">Every entry below traded the exact same bars from the exact same
+    blind starting point — the seed pins <code>RP.createSession</code>'s random start index, and the symbol,
+    interval and date range are pinned too, so nobody who competes on a featured seed can see the outcome in
+    advance of anyone else. Ranked by R-multiple (one R = one initial stop distance). Adherence is the same
+    confluence-gate follow rate the Progress tab shows, scoped to just this session — a high score bought by
+    forcing trades through a failing grade is visible, not hidden.</div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="grid g2">
+      <div><label for="lb-name">Compete as</label><input id="lb-name" placeholder="Display name" maxlength="40"></div>
+      <div><label>&nbsp;</label><button class="btn ghost" id="lb-nameSave" type="button" style="width:100%">Save name</button></div>
+    </div>
+    <div class="note" id="lb-nameMsg" style="margin-top:8px" aria-live="polite">Shown next to your rank. Defaults to the part of your email before the @.</div>
+  </div>
+
+  <div class="card" style="margin-bottom:10px">
+    <label for="lb-seedSelect">Featured seed</label>
+    <select id="lb-seedSelect"></select>
+    <div class="note" id="lb-seedNote" style="margin-top:8px"></div>
+  </div>
+
+  <div class="strip" id="lb-yourRow" style="margin-bottom:10px"></div>
+
+  <div class="card">
+    <div class="scroll"><table id="lb-table"><thead><tr>
+      <th>Rank</th><th>Trader</th><th class="num">R-multiple</th><th class="num">Adherence</th>
+      <th class="num">Trades</th><th>Completed</th>
+    </tr></thead><tbody></tbody></table></div>
   </div>
 </section>
 
@@ -4147,6 +4340,7 @@ function readForm() {
     side: $('f-side').value, qty: numv($('f-qty').value),
     entry: numv($('f-entry').value), stop: numv($('f-stop').value),
     exit: numv($('f-exit').value), netPnl: numv($('f-pnl').value), tags: {},
+    live: $('f-source').value === 'live',
   };
   C.TAXONOMY.forEach(function (d) { var v = $('tg-' + d.key).value; if (v) t.tags[d.key] = v; });
   return t;
@@ -4164,13 +4358,44 @@ function validate(t) {
   return null;
 }
 
+/* A live trade's tags are checked against report.leaks CAPTURED BEFORE this
+ * push/import — the trader's already-proven history, not including the trade
+ * being judged, and read synchronously before recompute() can reassign
+ * `report` out from under this check (recompute() updates report via an
+ * async Worker message on most browsers — see recompute()). */
+function liveLeakMatches(t, leaksSnapshot) {
+  if (!t.live) return [];
+  var tags = t.tags || {};
+  return (leaksSnapshot || []).filter(function (leak) { return tags[leak.dimension] === leak.value; });
+}
+
+function renderLiveLeakWarning(entries) {
+  var el = $('liveLeakWarn');
+  var hits = (entries || []).filter(function (x) { return x.matches.length; });
+  if (!hits.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  var multi = hits.length > 1;
+  el.style.display = '';
+  el.innerHTML = '<b class="neg">' +
+    (multi ? hits.length + ' live trades just logged match' : 'This live trade matches') +
+    ' a proven leak in your own stats:</b><ul style="margin:8px 0 0 18px">' +
+    hits.map(function (x) {
+      return x.matches.map(function (m) {
+        return '<li>' + (multi ? esc(x.t.date + ' ' + x.t.symbol) + ' — ' : '') +
+          esc(m.dimension + ' = ' + m.value) + ' — ' + R(m.expectancyR) +
+          ' over ' + m.n + ' trades <span class="mut">(p=' + m.pLow + ')</span></li>';
+      }).join('');
+    }).join('') + '</ul>';
+}
+
 $('addTrade').addEventListener('click', function () {
   var t = readForm(), err = validate(t);
   if (err) { $('addMsg').innerHTML = '<span class="excl">' + esc(err) + '</span>'; return; }
+  var leaksSnapshot = report.leaks || [];
   state.trades.push(t);
   state.savedAt = null;
   $('addMsg').innerHTML = '<span class="pos">Logged. Tag the next one at the moment you close it, not on Friday.</span>';
   ['f-entry', 'f-stop', 'f-exit', 'f-pnl', 'f-qty'].forEach(function (id) { $(id).value = ''; });
+  renderLiveLeakWarning([{ t: t, matches: liveLeakMatches(t, leaksSnapshot) }]);
   recompute();
 });
 
@@ -4208,6 +4433,7 @@ function renderLedger() {
       '</td><td class="num">' + esc(t.entry) + '</td><td class="num">' + esc(t.stop) +
       '</td><td class="num">' + esc(t.exit) + '</td><td class="num ' + sign(r) + '">' + R(r) +
       '</td><td class="mut" style="font-size:11px">' +
+      (t.live ? '<span class="tag">live</span> ' : '') +
       esc(Object.keys(t.tags || {}).map(function (k) { return k + ':' + t.tags[k]; }).join(' ')) +
       '</td><td><button class="btn ghost tiny" data-del="' + idx + '">del</button></td></tr>';
   }).join('') || '<tr><td colspan="9" class="mut">' +
@@ -4249,13 +4475,16 @@ function ingest(text, name) {
         RPCharts.setTheme(rpChartTheme());
         if (typeof rpSyncThemeInputs === 'function') rpSyncThemeInputs();
       }
+      renderLiveLeakWarning([]);
       recompute(); return;
     } catch (e) { alert('That JSON is not a ProFX Trading file.'); return; }
   }
   var rows = E.parseCSV(trimmed);
   if (!rows.length) { alert('No data rows found in ' + (name || 'that file') + '.'); return; }
   var m = E.resolveMap(rows).map;
-  var added = 0, skipped = [];
+  var liveImport = $('importSource') && $('importSource').value === 'live';
+  var leaksSnapshot = report.leaks || [];
+  var added = 0, skipped = [], liveEntries = [];
   rows.forEach(function (row, i) {
     // normalizeTrade is the SAME validation validate() enforces on manual
     // entry (a numeric stop on the correct side of entry, etc.) — a row that
@@ -4265,17 +4494,20 @@ function ingest(text, name) {
     // to do.
     var res = E.normalizeTrade(row, m);
     if (!res.ok) { skipped.push({ row: i + 2, reason: res.reason }); return; }
-    state.trades.push({
+    var t = {
       id: 'I' + (state.trades.length + added) + Date.now().toString(36),
       date: String(row[m.openDate] || ''), symbol: String(row[m.symbol] || ''),
       side: String(row[m.side] || '').toLowerCase().indexOf('s') === 0 ? 'Short' : 'Long',
       qty: numv(row[m.qty]), entry: numv(row[m.entry]), stop: numv(row[m.stop]),
       exit: numv(row[m.exit]), netPnl: numv(row[m.netPnl]),
-      tags: res.trade.tags,
-    });
+      tags: res.trade.tags, live: liveImport,
+    };
+    state.trades.push(t);
     added++;
+    if (liveImport) liveEntries.push({ t: t, matches: liveLeakMatches(t, leaksSnapshot) });
   });
   state.savedAt = null;
+  renderLiveLeakWarning(liveEntries);
   recompute();
   if (skipped.length) {
     alert(added + ' trade(s) imported. ' + skipped.length + ' row(s) skipped (not added to your ledger):\n' +
@@ -4347,6 +4579,26 @@ $('clearAll').addEventListener('click', function () {
 /* ---------------------------------------------------------------- */
 /* BENCH                                                             */
 /* ---------------------------------------------------------------- */
+/** Flags a CONFIRMED rule whose held-out expectancy is trending toward failure even though it still
+ *  clears every Bench gate. A rule that has already crossed to <=0 out-of-sample with n>=5 never reaches
+ *  this function — verdictFor() demotes it to 'candidate' first, so it silently exits report.confirmed
+ *  instead of landing here. The severe/'turned negative' branch below is therefore currently unreachable
+ *  through report.confirmed and exists only as a defensive fallback if that gate is ever loosened — the
+ *  useful, reachable case is the moderate/'below half' branch, which is the whole point: surface decay
+ *  while there's still edge left to protect, not after it's gone. */
+function decayWarnings(rep) {
+  if (!rep || !rep.confirmed) return [];
+  return rep.confirmed.map(function (s) {
+    var oos = s.outOfSample;
+    if (!oos || oos.n < 5 || oos.expectancyR === null) return null;
+    var severe = oos.expectancyR <= 0;
+    var moderate = !severe && oos.expectancyR < s.expectancyR * 0.5;
+    if (!severe && !moderate) return null;
+    return { dimension: s.dimension, value: s.value, overallR: s.expectancyR,
+      oosR: oos.expectancyR, oosN: oos.n, severe: severe };
+  }).filter(Boolean);
+}
+
 function renderBench() {
   if (!report) return;
   var o = report.overall, w = report.walkForward;
@@ -4373,6 +4625,19 @@ function renderBench() {
           ' <span class="mut">(p=' + s.pHigh + ')</span></li>'; }).join('')
     : '<li class="mut">None yet. ' + report.hypothesesTested +
       ' conditions tested; none cleared sample size, interval and false-discovery gates.</li>';
+
+  var decay = decayWarnings(report);
+  $('b-decay').innerHTML = decay.length
+    ? decay.map(function (d) {
+        return '<li><b>' + esc(d.dimension + ' = ' + d.value) + '</b> — overall ' + R(d.overallR) +
+          ', held-out ' + R(d.oosR) + ' over n=' + d.oosN +
+          ' <span class="tag ' + (d.severe ? 'neg' : 'warn') + '">' +
+          (d.severe ? 'HOLD-OUT NEGATIVE' : 'DECAYING') + '</span></li>'; }).join('')
+    : report.confirmed.length
+      ? '<li class="mut">No decay flagged across ' + report.confirmed.length + ' confirmed rule' +
+        (report.confirmed.length === 1 ? '' : 's') + ' — held-out expectancy is holding up, or too few ' +
+        'held-out trades exist yet to judge.</li>'
+      : '<li class="mut">No confirmed rules yet to monitor for decay.</li>';
 
   $('b-leaks').innerHTML = report.leaks.length
     ? report.leaks.map(function (s) {
@@ -4705,7 +4970,222 @@ function renderRisk() {
     return '<tr><td>' + pct(d) + '</td><td class="num ' + (d >= 0.3 ? 'neg' : '') + '">' +
       pct(L.recoveryRequired(d)) + '</td></tr>';
   }).join('');
+
+  renderWillIPass();
 }
+
+/* ---------------------------------------------------------------- */
+/* WILL I PASS — prop-challenge pass probability from own R-multiples */
+/* ---------------------------------------------------------------- */
+
+// ts=0 is Date.parse's failure fallback (see normalizeTrade) — a handful of
+// unparseable rows must not silently collapse into "same day" and skew the
+// cadence estimate.
+function tradesPerDayEstimate(trades) {
+  if (!trades.length) return 1;
+  var days = {}, dated = 0;
+  trades.forEach(function (t) {
+    if (t.ts > 0) { days[t.date.slice(0, 10)] = true; dated++; }
+  });
+  var n = Object.keys(days).length;
+  return n > 0 ? Math.max(1, dated / n) : trades.length;
+}
+
+function challengeMonteCarlo(rs, opts) {
+  var o = Object.assign({
+    startEquity: 50000, riskPct: 0.005, targetPct: 0.08, dailyPct: 0.05, ddPct: 0.10,
+    ddMode: 'trailing', tradesPerDay: 3, horizon: 400, sims: 5000, seed: 20260803,
+  }, opts || {});
+  if (rs.length < 5) return { insufficient: true, n: rs.length };
+
+  var rand = E.mulberry32(o.seed);
+  var tpd = Math.max(1, Math.round(o.tradesPerDay));
+  var profitTargetDollars = o.startEquity * o.targetPct;
+  var dailyLossDollars = o.startEquity * o.dailyPct;
+  var ddDollars = o.startEquity * o.ddPct;
+  var targetCeiling = o.startEquity + profitTargetDollars;
+
+  var passed = 0, failedDaily = 0, failedDD = 0, unresolved = 0, tradesToPass = [];
+
+  for (var s = 0; s < o.sims; s++) {
+    var eq = o.startEquity, peak = o.startEquity, dayStart = o.startEquity, inDay = 0, outcome = null;
+    for (var t = 1; t <= o.horizon; t++) {
+      if (inDay === 0) dayStart = eq;               // mark-to-market equity at this simulated day's open
+      eq += eq * o.riskPct * rs[(rand() * rs.length) | 0];
+      inDay++;
+      if (eq > peak) peak = eq;
+
+      var dailyFloor = dayStart - dailyLossDollars;
+      var ddFloor = (o.ddMode === 'static' ? o.startEquity : peak) - ddDollars;
+
+      // same order as chalEnforce(): daily, then DD, then target
+      if (eq <= dailyFloor) { outcome = 'dailyFail'; break; }
+      if (eq <= ddFloor) { outcome = 'ddFail'; break; }
+      if (eq >= targetCeiling) { outcome = 'pass'; tradesToPass.push(t); break; }
+
+      if (inDay >= tpd) inDay = 0;
+    }
+    if (outcome === 'pass') passed++;
+    else if (outcome === 'dailyFail') failedDaily++;
+    else if (outcome === 'ddFail') failedDD++;
+    else unresolved++;
+  }
+
+  tradesToPass.sort(function (a, b) { return a - b; });
+  function pctl(arr, p) {
+    if (!arr.length) return null;
+    return arr[Math.min(arr.length - 1, Math.max(0, Math.floor(p * arr.length)))];
+  }
+
+  return {
+    insufficient: false, inputs: o, sampleSize: rs.length,
+    passRate: E.round(passed / o.sims, 4),
+    failDailyRate: E.round(failedDaily / o.sims, 4),
+    failDDRate: E.round(failedDD / o.sims, 4),
+    unresolvedRate: E.round(unresolved / o.sims, 4),
+    medianTradesToPass: pctl(tradesToPass, 0.50),
+    p25TradesToPass: pctl(tradesToPass, 0.25),
+    p75TradesToPass: pctl(tradesToPass, 0.75),
+  };
+}
+
+// Same percentile-fan technique as renderRisk()'s r-fan block above, just
+// walked to o.horizon with two extra dashed reference lines.
+function wipFanSvg(rs, o) {
+  var W = 700, H = 190;
+  var targetCeiling = o.startEquity + o.startEquity * o.targetPct;
+  var initialDDFloor = o.startEquity - o.startEquity * o.ddPct; // trailing floor only ever rises from here
+  var paths = [0.05, 0.25, 0.5, 0.75, 0.95].map(function (q, qi) {
+    var rand = E.mulberry32(o.seed + 1 + qi * 977), runs = [];
+    for (var s = 0; s < 400; s++) {
+      var eq = o.startEquity, path = [eq];
+      for (var t = 0; t < o.horizon; t++) { eq += eq * o.riskPct * rs[(rand() * rs.length) | 0]; path.push(eq); }
+      runs.push(path);
+    }
+    var byStep = [];
+    for (var i = 0; i <= o.horizon; i++) {
+      var col = runs.map(function (p) { return p[i]; }).sort(function (a, b) { return a - b; });
+      byStep.push(col[Math.min(col.length - 1, Math.floor(q * col.length))]);
+    }
+    return { q: q, series: byStep };
+  });
+  var allV = paths.reduce(function (a, p) { return a.concat(p.series); }, [o.startEquity, targetCeiling, initialDDFloor]);
+  var mn = Math.min.apply(null, allV), mx = Math.max.apply(null, allV), sp = (mx - mn) || 1;
+  var PX = function (i) { return 44 + (i / o.horizon) * (W - 54); };
+  var PY = function (v) { return H - 18 - ((v - mn) / sp) * (H - 32); };
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H +
+    '" role="img" aria-label="simulated challenge equity percentiles">' +
+    '<line x1="44" x2="' + (W - 8) + '" y1="' + PY(targetCeiling) + '" y2="' + PY(targetCeiling) +
+      '" stroke="var(--green)" stroke-dasharray="3 3"/>' +
+    '<line x1="44" x2="' + (W - 8) + '" y1="' + PY(initialDDFloor) + '" y2="' + PY(initialDDFloor) +
+      '" stroke="var(--red)" stroke-dasharray="3 3"/>' +
+    paths.map(function (p) {
+      var mid = p.q === 0.5;
+      return '<path d="' + p.series.map(function (v, i) {
+        return (i ? 'L' : 'M') + PX(i).toFixed(1) + ' ' + PY(v).toFixed(1); }).join(' ') +
+        '" fill="none" stroke="' + (mid ? 'var(--ink)' : 'var(--band)') + '" stroke-width="' + (mid ? 1.6 : 1) + '"/>';
+    }).join('') +
+    '<text x="4" y="' + (PY(mx) + 4) + '" font-size="9" fill="var(--muted)">' + usd(mx) + '</text>' +
+    '<text x="4" y="' + (PY(mn) + 4) + '" font-size="9" fill="var(--muted)">' + usd(mn) + '</text>' +
+    '<text x="' + (W - 8) + '" y="' + (H - 4) + '" font-size="9" text-anchor="end" fill="var(--muted)">' +
+      o.horizon + ' trades · target ' + usd(targetCeiling) + ' (green) · starting DD floor ' +
+      usd(initialDDFloor) + ' (red)</text></svg>';
+}
+
+function wipOpts() {
+  return {
+    presetKey: $('wip-preset').value,
+    startEquity: numv($('wip-equity').value) || 50000,
+    targetPct: (numv($('wip-target').value) || 8) / 100,
+    dailyPct: (numv($('wip-daily').value) || 5) / 100,
+    ddPct: (numv($('wip-dd').value) || 10) / 100,
+    ddMode: $('wip-ddmode').value,
+    riskPct: (numv($('wip-risk').value) || 0.5) / 100,
+    horizon: Math.max(20, Math.min(2000, numv($('wip-horizon').value) || 400)),
+  };
+}
+
+function wipApplyPreset() {
+  var PRESETS = (typeof CHALLENGE_PRESETS !== 'undefined') ? CHALLENGE_PRESETS : {};
+  var key = $('wip-preset').value, p = PRESETS[key], custom = key === 'custom';
+  ['wip-equity', 'wip-target', 'wip-daily', 'wip-dd', 'wip-ddmode'].forEach(function (id) {
+    $(id).disabled = !custom;
+  });
+  if (p) {
+    $('wip-equity').value = p.equity; $('wip-target').value = p.target;
+    $('wip-daily').value = p.daily; $('wip-dd').value = p.dd; $('wip-ddmode').value = p.ddMode;
+  }
+  state.chalPassSettings = wipOpts(); cacheSave();
+  renderWillIPass();
+}
+
+function wipInit() {
+  if (state.chalPassSettings && state.chalPassSettings.presetKey) {
+    $('wip-preset').value = state.chalPassSettings.presetKey;
+  }
+  wipApplyPreset();   // also does the first render
+}
+
+['wip-equity', 'wip-target', 'wip-daily', 'wip-dd', 'wip-ddmode', 'wip-risk', 'wip-horizon'].forEach(function (id) {
+  $(id).addEventListener('change', function () {
+    state.chalPassSettings = wipOpts(); cacheSave(); renderWillIPass();
+  });
+});
+$('wip-preset').addEventListener('change', wipApplyPreset);
+
+var lastWipMC = null;
+
+function renderWillIPass() {
+  var statsEl = $('wip-stats');
+  if (!statsEl) return;   // Risk lab tab not in the DOM yet (shouldn't happen — defensive only)
+  if (rsAll.length < 5) {
+    statsEl.innerHTML = cell('Status', 'need 5+', 'mut');
+    $('wip-fan').innerHTML = '<div class="mut">Log at least five gradeable trades and the simulation runs.</div>';
+    $('wip-cadenceNote').textContent = '';
+    lastWipMC = null;
+    return;
+  }
+  var o = wipOpts();
+  var tpd = tradesPerDayEstimate(tradesN);
+  var mc = challengeMonteCarlo(rsAll, {
+    startEquity: o.startEquity, riskPct: o.riskPct, targetPct: o.targetPct, dailyPct: o.dailyPct,
+    ddPct: o.ddPct, ddMode: o.ddMode, tradesPerDay: tpd, horizon: o.horizon, sims: 5000,
+  });
+  lastWipMC = mc; lastWipMC.opts = o;
+
+  statsEl.innerHTML =
+    cell('Pass rate', pct(mc.passRate), mc.passRate >= 0.5 ? 'pos' : mc.passRate < 0.2 ? 'neg' : '') +
+    cell('Failed — daily loss', pct(mc.failDailyRate)) +
+    cell('Failed — max/trailing DD', pct(mc.failDDRate)) +
+    cell('Unresolved at ' + o.horizon + ' trades', pct(mc.unresolvedRate)) +
+    cell('Median trades to pass', mc.medianTradesToPass === null ? '—' : mc.medianTradesToPass) +
+    cell('Median days to pass', mc.medianTradesToPass === null ? '—' : E.round(mc.medianTradesToPass / tpd, 1));
+
+  $('wip-fan').innerHTML = wipFanSvg(rsAll, Object.assign({ seed: 20260803 }, o));
+  $('wip-cadenceNote').textContent = 'Your logged cadence: ' + E.round(tpd, 2) + ' trades/day → each ' +
+    'simulated day = ' + Math.max(1, Math.round(tpd)) + ' trade(s). 5,000 simulated attempts, resampled ' +
+    'from ' + mc.sampleSize + ' of your own trades.';
+}
+
+$('wip-json').addEventListener('click', function () {
+  if (lastWipMC && !lastWipMC.insufficient) download('will-i-pass.json', JSON.stringify(lastWipMC, null, 2), 'application/json');
+});
+$('wip-txt').addEventListener('click', function () {
+  if (!lastWipMC || lastWipMC.insufficient) return;
+  var mc = lastWipMC, o = mc.opts;
+  var text = 'ProFX Trading — Will I pass?\n' +
+    'Preset: ' + o.presetKey + ' · account ' + usd(o.startEquity) + ' · target ' + pct(o.targetPct) +
+    ' · daily loss ' + pct(o.dailyPct) + ' · max DD ' + pct(o.ddPct) + ' (' + o.ddMode + ') · risk/trade ' +
+    pct(o.riskPct) + '\n' +
+    'Simulated from ' + mc.sampleSize + ' of my own R-multiples, ' + mc.inputs.sims + ' attempts:\n' +
+    '  Pass rate: ' + pct(mc.passRate) + '\n' +
+    '  Failed on daily loss: ' + pct(mc.failDailyRate) + '\n' +
+    '  Failed on max/trailing drawdown: ' + pct(mc.failDDRate) + '\n' +
+    '  Still active at ' + o.horizon + ' trades: ' + pct(mc.unresolvedRate) + '\n' +
+    '  Median trades to pass: ' + (mc.medianTradesToPass === null ? '—' : mc.medianTradesToPass) + '\n\n' +
+    'Not a guarantee — resamples my own past trades with replacement; assumes no change in edge.';
+  download('will-i-pass.txt', text, 'text/plain');
+});
 
 /* ---------------------------------------------------------------- */
 /* PROFESSOR                                                         */
@@ -4897,6 +5377,9 @@ var INSTRUMENTS = [
 
 var rpBars = null, sess = null, playing = false, timer = null, sessionLedger = [];
 var rpLoadedSymbol = null;   // symbol id from the market-data loader, when known — for the sizing-mismatch guard
+var rpFetchSpec = null;   // {symbol, interval, from, to} — only set when Load bars used an EXPLICIT
+                           // date range. That's the exact provenance needed to refetch identical bars
+                           // later; "most recent" fetches and CSV uploads have no reproducible source.
 var rpMarkup = null;   // last deterministic structure read, for the Professor
 
 function rpInit() {
@@ -5017,6 +5500,7 @@ function loadBarText(text) {
   if (!res.bars.length) { alert('No usable bars found. Needs time, open, high, low and close columns.'); return; }
   rpBars = res;
   rpLoadedSymbol = null;   // a generic CSV doesn't reliably declare its own symbol — can't cross-check sizing
+  rpFetchSpec = null;      // no server-side source to refetch a CSV from — this session can't be proof-published
   state.bars = res.bars;               // memory only
   state.barsMeta = { baseTimeframeMin: res.baseTimeframeMin, range: res.range,
                      rejected: res.rejected, sessionGaps: res.sessionGaps };
@@ -5787,7 +6271,7 @@ $('rp-clear-drawings') && $('rp-clear-drawings').addEventListener('click', funct
   rpRedrawDrawings(RPCharts.getPane('ltf'), null);
 });
 $('rp-killzones') && $('rp-killzones').addEventListener('change', function () { rpDraw(); });
-['rp-mk-fvg', 'rp-mk-breaks', 'rp-mk-sweeps', 'rp-mk-liquidity'].forEach(function (id) {
+['rp-mk-fvg', 'rp-mk-breaks', 'rp-mk-sweeps', 'rp-mk-liquidity', 'rp-mk-edge'].forEach(function (id) {
   $(id) && $(id).addEventListener('change', function () { rpDraw(); });
 });
 document.addEventListener('keydown', function (e) {
@@ -5941,6 +6425,25 @@ function rpKillzoneShapes(view) {
   return out;
 }
 
+/** Which TAXONOMY killzone value (if any) a timestamp falls inside, resolved
+ *  the same DST-aware way the "Shade kill zones" overlay computes it. When
+ *  windows nest (silverbullet sits fully inside nyopen) the narrower one wins
+ *  — that's the more specific, more informative tag a trader would pick. */
+function rpCurrentKillzone(ts) {
+  var best = null;
+  for (var offset = -1; offset <= 1; offset++) {
+    var day = new Date(ts); day.setUTCHours(0, 0, 0, 0);
+    var d = day.getTime() + offset * 86400000;
+    KILLZONE_BANDS.forEach(function (band) {
+      if (!band.tz) return; // 'asian' has no local anchor and isn't a TAXONOMY killzone value
+      var from = wallClockUtc(d, band.hour, band.minute, band.tz);
+      var to = from + band.durationHours * 3600000;
+      if (ts >= from && ts < to && (!best || band.durationHours < best.durationHours)) best = band;
+    });
+  }
+  return best ? best.key : null;
+}
+
 /** A fib placement stores just its two anchor points; at render time it
  *  expands into one horizontal line per FIB_LEVELS ratio, each stretched to
  *  the current last-visible-bar time so the levels read edge-to-edge like a
@@ -6025,6 +6528,7 @@ function rpDrawPane(containerId, tfMin, paneH, opts, paneKey) {
   var showBreaks = !$('rp-mk-breaks') || $('rp-mk-breaks').checked;
   var showSweeps = !$('rp-mk-sweeps') || $('rp-mk-sweeps').checked;
   var showLiquidity = !$('rp-mk-liquidity') || $('rp-mk-liquidity').checked;
+  var showEdge = !$('rp-mk-edge') || $('rp-mk-edge').checked;
   var markers = [];
   if (detectOn) {
     try {
@@ -6036,7 +6540,8 @@ function rpDrawPane(containerId, tfMin, paneH, opts, paneKey) {
       // flicker and revise itself as more data lands within that same bar.
       // aggregate() already tags every candle with `closed`; filter on it.
       var closedView = view.filter(function (b) { return b.closed !== false; });
-      var mk = Structure.analyze(closedView.length >= 12 ? closedView : view);
+      var structBars = closedView.length >= 12 ? closedView : view;
+      var mk = Structure.analyze(structBars);
       if (mk.available) {
         if (opts.showOrderLines) rpMarkup = mk;   // LTF markup feeds the Professor — unchanged wiring
 
@@ -6074,6 +6579,43 @@ function rpDrawPane(containerId, tfMin, paneH, opts, paneKey) {
             color: '#b45cff', shape: s.side === 'high' ? 'arrowDown' : 'arrowUp', text: 'sweep'
           });
         });
+
+        /* --- confirmed-edge overlay: cross-reference LIVE structure against --- */
+        /* report.confirmed, which was already proven by EdgeEngine's           */
+        /* permutation test + FDR correction. Only the killzone dimension is    */
+        /* checked — it's the one TAXONOMY tag objectively derivable from a bar */
+        /* timestamp alone; every other dimension (model, management, smt, ...) */
+        /* is the trader's own subjective input at entry time and has no live   */
+        /* signal to verify it against, so matching those would be inventing a  */
+        /* number the Professor didn't actually compute. */
+        if (showEdge && report && report.confirmed && report.confirmed.length) {
+          var curKz = rpCurrentKillzone(structBars[structBars.length - 1].t);
+          var kzHit = curKz && report.confirmed.filter(function (s) {
+            return s.dimension === 'killzone' && s.value === curKz;
+          })[0];
+          if (kzHit) {
+            var freshIdx = structBars.length - 1;
+            var edgeLabel = '★ confirmed edge: killzone=' + curKz + '  n=' + kzHit.n + '  ' + R(kzHit.expectancyR);
+            mk.breaks.forEach(function (b) {
+              if (b.i === freshIdx) markers.push({
+                time: Math.floor(b.t / 1000), position: 'aboveBar',
+                color: '#facc15', shape: 'square', text: edgeLabel + ' (' + b.kind + ')'
+              });
+            });
+            mk.sweeps.forEach(function (s) {
+              if (s.i === freshIdx) markers.push({
+                time: Math.floor(s.t / 1000), position: s.side === 'high' ? 'aboveBar' : 'belowBar',
+                color: '#facc15', shape: 'square', text: edgeLabel + ' (sweep)'
+              });
+            });
+            mk.fvgs.forEach(function (g) {
+              if (g.i === freshIdx - 1) markers.push({
+                time: Math.floor(g.t / 1000), position: g.dir === 'bull' ? 'belowBar' : 'aboveBar',
+                color: '#facc15', shape: 'square', text: edgeLabel + ' (FVG)'
+              });
+            });
+          }
+        }
       } else {
         pane.fvg.setBoxes([]);
       }
@@ -6132,6 +6674,7 @@ function rpDraw() {
 }
 
 function rpRender() {
+  rpProofRender();
   rpDraw(); rpSizePreview();
   if (!sess) return;
   var pr = RP.progress(sess);
@@ -6248,7 +6791,7 @@ document.querySelectorAll('nav [role=tab]').forEach(function (b) {
   b.addEventListener('click', function () {
     document.querySelectorAll('nav [role=tab]').forEach(function (x) {
       x.setAttribute('aria-selected', String(x === b)); });
-    ['journal', 'bench', 'risk', 'replay', 'professor', 'desk', 'profile', 'courses', 'games', 'progress', 'challenge'].forEach(function (t) {
+    ['journal', 'bench', 'risk', 'replay', 'proofs', 'professor', 'desk', 'profile', 'courses', 'games', 'progress', 'challenge', 'leaderboard'].forEach(function (t) {
       $('tab-' + t).hidden = (t !== b.dataset.tab); });
     var mt = document.querySelector('.mobile-top .mtitle');
     if (mt) mt.textContent = b.textContent.trim();
@@ -6373,6 +6916,7 @@ $('rp-load') && $('rp-load').addEventListener('click', function () {
         $('rp-inst').value = sym;
       }
       rpLoadedSymbol = sym;
+      rpFetchSpec = (from && to) ? { symbol: sym, interval: iv, from: from, to: to } : null;
       msg.innerHTML = '<span class="pos">' + d.count.toLocaleString('en-US') + ' bars · ' +
         esc(d.label) + (d.range ? ' · ' + esc(d.range.from) + ' to ' + esc(d.range.to) : '') +
         (d.proxy ? ' <span class="mut">(proxy)</span>' : '') + '</span>';
@@ -6382,6 +6926,178 @@ $('rp-load') && $('rp-load').addEventListener('click', function () {
       msg.innerHTML = '<span class="excl">Network error. Drop a CSV instead.</span>';
     });
 });
+
+/* ---------------------------------------------------------------- */
+/* STRATEGY PROOFS — publish a closed Replay session, browse others' */
+/* ---------------------------------------------------------------- */
+function rpProofEligible() {
+  return !!(sess && sess.closed && rpFetchSpec && rpFetchSpec.symbol === sess.cfg.symbol);
+}
+function rpBaseTimeframeMin(s) {
+  return s.bars.length > 1 ? Math.max(1, Math.round((s.bars[1].t - s.bars[0].t) / 60000)) : 1;
+}
+function rpProofRender() {
+  var elig = $('pf-proofElig'), wrap = $('pf-proofForm');
+  if (!elig || !wrap) return;
+  if (!sess || !sess.closed) {
+    elig.style.display = '';
+    elig.innerHTML = 'Close a session ("End &amp; reveal") to publish it as a strategy proof.';
+    wrap.style.display = 'none';
+    return;
+  }
+  if (!rpProofEligible()) {
+    elig.style.display = '';
+    elig.innerHTML = '<span class="excl">This session can’t be published.</span> Proofs need bars ' +
+      'loaded via "Load bars" above (not a dropped CSV) with an explicit Start/End date — that’s ' +
+      'what lets anyone refetch the exact same bars later to verify it. Futures support any timeframe; ' +
+      'FX/crypto need Daily.';
+    wrap.style.display = 'none';
+    return;
+  }
+  elig.style.display = 'none';
+  wrap.style.display = '';
+  var sm = RP.sessionSummary(sess);
+  $('pf-proofPreview').innerHTML =
+    cell('Symbol', esc(sm.symbol)) + cell('Seed', sm.seed) + cell('Trades', sm.trades) +
+    cell('Total R', R(sm.totalR), sign(sm.totalR)) + cell('Net P&L', usd(sm.netPnl), sign(sm.netPnl)) +
+    cell('Win rate', sm.trades ? pct(sm.wins / sm.trades) : '—');
+}
+
+$('pf-proofPublish') && $('pf-proofPublish').addEventListener('click', function () {
+  if (!authUser) { authOpen('signin'); return; }
+  if (!rpProofEligible()) return;
+  var title = $('pf-proofTitle').value.trim();
+  if (!title) { $('pf-proofMsg').innerHTML = '<span class="excl">Give it a title first.</span>'; return; }
+  var author = $('pf-proofAuthor').value.trim() || (authUser.email || 'trader').split('@')[0];
+  var sm = RP.sessionSummary(sess);
+  var row = {
+    user_id: authUser.id,
+    author_display_name: author,
+    title: title,
+    description: $('pf-proofDesc').value.trim() || null,
+    symbol: sess.cfg.symbol,
+    base_timeframe_min: rpBaseTimeframeMin(sess),
+    seed: sess.cfg.seed,
+    session_cfg: Object.assign({}, sess.cfg, { fetchSpec: rpFetchSpec }),
+    confluence_rubric: RUBRIC,
+    results: sm,
+    is_public: true
+  };
+  $('pf-proofPublish').disabled = true;
+  $('pf-proofMsg').innerHTML = '<span class="mut">Publishing…</span>';
+  sb.from('profx_strategy_proofs').insert(row).then(function (r) {
+    $('pf-proofPublish').disabled = false;
+    if (r.error) { $('pf-proofMsg').innerHTML = '<span class="excl">' + esc(r.error.message) + '</span>'; return; }
+    $('pf-proofMsg').innerHTML = '<span class="pos">Published — see it on the Proofs tab.</span>';
+    $('pf-proofTitle').value = ''; $('pf-proofDesc').value = '';
+    if (typeof pfLoadProofs === 'function') pfLoadProofs();
+  }).catch(function () {
+    $('pf-proofPublish').disabled = false;
+    $('pf-proofMsg').innerHTML = '<span class="excl">Network error — try again.</span>';
+  });
+});
+
+function pfProofCard(p) {
+  var sm = p.results || {};
+  var winRate = sm.trades ? pct(sm.wins / sm.trades) : '—';
+  return '<div class="card" style="margin-bottom:12px">' +
+    '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:baseline">' +
+      '<div><b>' + esc(p.title) + '</b> <span class="note" style="margin:0">by ' +
+        esc(p.author_display_name || 'anonymous') + '</span></div>' +
+      '<span class="note" style="margin:0">' + esc(new Date(p.created_at).toLocaleDateString()) + '</span>' +
+    '</div>' +
+    (p.description ? '<div class="note" style="margin:8px 0 0">' + esc(p.description) + '</div>' : '') +
+    '<div class="strip" style="margin-top:10px">' +
+      cell('Symbol', esc(p.symbol)) + cell('Base TF', esc(String(Number(p.base_timeframe_min) || 0)) + 'm') +
+      cell('Seed', esc(String(Number(p.seed) || 0))) +
+      cell('Trades', Number.isFinite(sm.trades) ? esc(String(sm.trades)) : '—') +
+      cell('Total R', Number.isFinite(sm.totalR) ? esc(R(sm.totalR)) : '—', sign(sm.totalR)) +
+      cell('Net P&L', Number.isFinite(sm.netPnl) ? esc(usd(sm.netPnl)) : '—', sign(sm.netPnl)) +
+      cell('Win rate', esc(winRate)) +
+    '</div>' +
+    '<div style="margin-top:10px"><button class="btn ghost tiny" data-proof-verify="' + esc(p.id) +
+      '">Verify — replay this exact seed</button></div>' +
+  '</div>';
+}
+
+var pfProofsCache = [];
+function pfLoadProofs() {
+  if (!sb || !$('pf-list')) return;
+  $('pf-listMsg').innerHTML = '<span class="mut">Loading…</span>';
+  sb.from('profx_strategy_proofs').select('*').eq('is_public', true)
+    .order('created_at', { ascending: false }).limit(50)
+    .then(function (r) {
+      if (r.error) { $('pf-listMsg').innerHTML = '<span class="excl">' + esc(r.error.message) + '</span>'; return; }
+      pfProofsCache = r.data || [];
+      $('pf-listMsg').textContent = pfProofsCache.length + ' published.';
+      $('pf-list').innerHTML = pfProofsCache.length
+        ? pfProofsCache.map(pfProofCard).join('')
+        : '<div class="card mut">No proofs published yet — be the first from the Replay tab.</div>';
+    })
+    .catch(function () { $('pf-listMsg').innerHTML = '<span class="excl">Network error.</span>'; });
+}
+$('pf-refresh') && $('pf-refresh').addEventListener('click', pfLoadProofs);
+$('pf-list') && $('pf-list').addEventListener('click', function (e) {
+  var btn = e.target.closest('[data-proof-verify]');
+  if (!btn) return;
+  var proof = pfProofsCache.filter(function (p) { return String(p.id) === btn.getAttribute('data-proof-verify'); })[0];
+  if (proof) pfVerify(proof);
+});
+
+function pfVerify(proof) {
+  if (!authUser) { authOpen('signin'); return; }
+  if (sess && !sess.closed && !confirm('This replaces your current open Replay session. Continue?')) return;
+  var cfg = proof.session_cfg || {};
+  var fs = cfg.fetchSpec;
+  if (!fs || !fs.from || !fs.to) {
+    alert('This proof wasn’t published with a re-fetchable date range, so it can’t be independently verified.');
+    return;
+  }
+  document.querySelector('[data-tab="replay"]').click();
+  $('rp-msg').innerHTML = '<span class="mut">Loading ' + esc(proof.symbol) + ' — ' + esc(fs.from) +
+    ' to ' + esc(fs.to) + ' to verify seed ' + esc(String(proof.seed)) + '…</span>';
+  authAccessToken().then(function (token) {
+    return fetch('/.netlify/functions/bars?symbol=' + encodeURIComponent(proof.symbol) +
+      '&interval=' + encodeURIComponent(fs.interval) + '&full=1' +
+      '&from=' + encodeURIComponent(fs.from) + '&to=' + encodeURIComponent(fs.to),
+      { headers: token ? { Authorization: 'Bearer ' + token } : {} });
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d || !d.ok) {
+        $('rp-msg').innerHTML = '<span class="excl">' + esc((d && d.reason) || 'Could not refetch this proof’s bars.') + '</span>';
+        return;
+      }
+      rpBars = { bars: d.bars, meta: {} };
+      state.barsMeta = { baseTimeframeMin: d.intervalMin, range: { first: d.first, last: d.last },
+                          source: d.label + ' · verifying proof seed ' + proof.seed };
+      rpDataInfo(state.barsMeta);
+      if ($('rp-inst').querySelector('option[value="' + proof.symbol + '"]')) $('rp-inst').value = proof.symbol;
+      rpLoadedSymbol = proof.symbol;
+      rpFetchSpec = { symbol: proof.symbol, interval: fs.interval, from: fs.from, to: fs.to };
+      var cfgOpts = Object.assign({}, cfg);
+      delete cfgOpts.fetchSpec;
+      try { sess = RP.createSession(rpBars.bars, cfgOpts); }
+      catch (e) { $('rp-msg').innerHTML = '<span class="excl">' + esc(e.message) + '</span>'; return; }
+      sessionLedger = []; rpChatHistory = [];
+      if (typeof rpChatRender === 'function') rpChatRender();
+      rpUserDrawings = []; rpDrawStart = null; rpDragKind = null; rpSetPickMode(null);
+      if (rpTool !== 'none') rpSetTool(rpTool);
+      RUBRIC.items.forEach(function (it) { $('cf-' + it.key).checked = false; });
+      $('rp-msg').innerHTML = '<span class="pos">Verifying “' + esc(proof.title) + '” — seed ' +
+        sess.cfg.seed + ', same symbol and bar window ' + esc(proof.author_display_name || 'the publisher') +
+        ' traded. This reproduces the same starting point and revealed bars — not the same trade ' +
+        'outcomes, since those were live decisions. Play or step through and see for yourself.</span>';
+      ['rp-play', 'rp-step', 'rp-end', 'rp-goto-ny', 'rp-goto-ln', 'rp-goto-nd'].forEach(function (id) { $(id).disabled = false; });
+      $('rp-commit').disabled = true;
+      rpScoreChecklist();
+      rpRender();
+    })
+    .catch(function () { $('rp-msg').innerHTML = '<span class="excl">Network error — try again.</span>'; });
+}
+
+var pfTabBtn = document.querySelector('[data-tab="proofs"]');
+if (pfTabBtn) pfTabBtn.addEventListener('click', function () { pfLoadProofs(); });
 
 /* ---------------------------------------------------------------- */
 /* THE PROFESSOR — prose over deterministic evidence                 */
@@ -6915,7 +7631,7 @@ function tradeToRemoteRow(t, idx) {
     trade_date: t.date || null, symbol: t.symbol || null, side: t.side || null,
     qty: numv(t.qty), entry: numv(t.entry), stop: numv(t.stop), exit: numv(t.exit),
     net_pnl: numv(t.netPnl), tags: t.tags || {}, replay: t.replay || null,
-    source: t.replay ? 'replay' : 'journal'
+    source: t.replay ? 'replay' : (t.live ? 'live' : 'journal')
   };
 }
 // Both functions re-check state.ownerId against the LIVE authUser at the
@@ -8299,6 +9015,365 @@ function chalRender() {
 }
 
 chalInit();
+wipInit();
+
+/* ================================================================== */
+/* GHOST-MODE LEADERBOARDS — pinned symbol+interval+range+seed so      */
+/* every competitor's RP.createSession gets byte-identical bars and    */
+/* the identical blind start index (span/rand depend on bars.length,   */
+/* see RP.createSession). Seed alone is NOT enough — different loaded  */
+/* bars under the same seed land on a different slice, so              */
+/* RP.createSession is wrapped to tag the ACTUAL session object at     */
+/* creation time rather than trusting which button fired.              */
+/* ================================================================== */
+var LB_INTERVAL_MIN = { '1min': 1, '5min': 5, '15min': 15, '30min': 30, '60min': 60, 'daily': 1440 };
+
+var FEATURED_SEEDS = [
+  { id: 'nq-oct23', label: 'NQ — Oct 2023 (5m)', symbol: 'NQ', interval: '5min',
+    from: '2023-10-01', to: '2023-10-31', lookbackDays: 3, sessionLenDays: 1, seed: 481516,
+    blurb: 'Fed-pause rally chop.' },
+  { id: 'es-aug24', label: 'ES — Aug 2024 (15m)', symbol: 'ES', interval: '15min',
+    from: '2024-08-01', to: '2024-08-31', lookbackDays: 3, sessionLenDays: 1, seed: 902214,
+    blurb: 'Yen-carry-unwind volatility spike.' },
+  { id: 'gc-mar24', label: 'GC — Mar 2024 (5m)', symbol: 'GC', interval: '5min',
+    from: '2024-03-01', to: '2024-03-31', lookbackDays: 3, sessionLenDays: 1, seed: 337750,
+    blurb: 'Gold breakout month.' },
+  { id: 'cl-jun23', label: 'CL — Jun 2023 (15m)', symbol: 'CL', interval: '15min',
+    from: '2023-06-01', to: '2023-06-30', lookbackDays: 3, sessionLenDays: 2, seed: 118099,
+    blurb: 'OPEC-cut whipsaw.' },
+  { id: 'ym-apr25', label: 'YM — Apr 2025 (5m)', symbol: 'YM', interval: '5min',
+    from: '2025-04-01', to: '2025-04-30', lookbackDays: 1, sessionLenDays: 1, seed: 655321,
+    blurb: 'Tariff-selloff volatility.' },
+];
+// v1 hardcoded list per spec scope. lookbackDays/sessionLenDays MUST match an
+// existing <option> value on rp-lookback (0.25/1/3/5/10) / rp-sessionlen
+// (0.5/1/2/5), since these are set on <select> elements, not free-typed.
+
+var rpFeaturedSeedActive = null;   // consumed by the very next RP.createSession call
+var rpFeaturedPoll = null;
+
+function rpRenderFeaturedSeeds() {
+  var el = $('rp-featuredSeeds');
+  if (!el) return;
+  el.innerHTML = FEATURED_SEEDS.map(function (def, i) {
+    return '<button class="btn ghost tiny" type="button" data-idx="' + i + '">Compete: ' +
+      esc(def.label) + '</button>';
+  }).join('');
+  el.querySelectorAll('button').forEach(function (b) {
+    b.addEventListener('click', function () { rpCompeteOnSeed(parseInt(b.dataset.idx, 10)); });
+  });
+}
+
+function rpCompeteOnSeed(idx) {
+  var def = FEATURED_SEEDS[idx];
+  if (!def || !$('rp-mkt')) return;
+  if (rpFeaturedPoll) { clearInterval(rpFeaturedPoll); rpFeaturedPoll = null; }
+  $('rp-mkt').value = def.symbol;
+  $('rp-int').value = def.interval;
+  rpUpdateRangePicker(); rpUpdateAvNote();
+  $('rp-from').value = def.from;
+  $('rp-to').value = def.to;
+  $('rp-lookback').value = String(def.lookbackDays);
+  $('rp-sessionlen').value = String(def.sessionLenDays);
+  $('rp-seed').value = String(def.seed);
+  $('rp-blind').value = '1';
+  $('rp-featuredMsg').innerHTML = '<span class="mut">Loading ' + esc(def.label) + '…</span>';
+  rpFeaturedSeedActive = def;
+  $('rp-load').click();
+  var waited = 0;
+  rpFeaturedPoll = setInterval(function () {
+    waited += 300;
+    if (rpBars && rpLoadedSymbol === def.symbol) {
+      clearInterval(rpFeaturedPoll); rpFeaturedPoll = null;
+      $('rp-featuredMsg').innerHTML = '<span class="pos">Bars loaded — starting session.</span>';
+      $('rp-new').click();
+      return;
+    }
+    if (waited > 25000) {
+      clearInterval(rpFeaturedPoll); rpFeaturedPoll = null;
+      rpFeaturedSeedActive = null;
+      $('rp-featuredMsg').innerHTML = '<span class="excl">Bars did not load in time — check the message ' +
+        'above and try again.</span>';
+    }
+  }, 300);
+}
+
+(function () {
+  var _rpCreateSession = RP.createSession;
+  RP.createSession = function (bars, opts) {
+    var s = _rpCreateSession(bars, opts);
+    var def = rpFeaturedSeedActive;
+    rpFeaturedSeedActive = null;   // one-shot regardless of outcome
+    if (def) {
+      var ok = s.cfg.seed === def.seed && s.cfg.symbol === def.symbol &&
+        state.barsMeta && state.barsMeta.baseTimeframeMin === LB_INTERVAL_MIN[def.interval];
+      s.featuredSeed = ok ? def : null;
+    } else {
+      s.featuredSeed = null;
+    }
+    return s;
+  };
+})();
+
+(function () {
+  var _rpFinish = rpFinish;
+  rpFinish = function () { _rpFinish(); lbMaybeSubmit(); };
+})();
+
+function lbDisplayName() {
+  var v = state.settings && state.settings.lbDisplayName;
+  if (v) return v;
+  return (authUser && authUser.email) ? authUser.email.split('@')[0] : 'trader';
+}
+
+function lbMaybeSubmit() {
+  if (!sess || !sess.closed || !sess.featuredSeed) return;
+  var def = sess.featuredSeed;
+  sess.featuredSeed = null;   // one submit attempt per close
+  var sm = RP.sessionSummary(sess);
+  if (!sm.trades) {
+    $('rp-msg').innerHTML += ' <span class="mut">No trades taken — nothing to post to the "' +
+      esc(def.label) + '" leaderboard.</span>';
+    return;
+  }
+  if (!sb || !authUser) {
+    $('rp-msg').innerHTML += ' <span class="excl">Sign in to post this run to the "' +
+      esc(def.label) + '" leaderboard.</span>';
+    return;
+  }
+  var scored = sessionLedger.filter(function (t) { return t.replay && t.replay.confluence; });
+  var followed = scored.filter(function (t) { return !t.replay.confluence.forced; });
+  var adherencePct = scored.length ? E.round(followed.length / scored.length, 4) : null;
+
+  var row = {
+    user_id: authUser.id, display_name: lbDisplayName(),
+    seed: def.seed, symbol: def.symbol, base_timeframe_min: LB_INTERVAL_MIN[def.interval],
+    r_multiple: sm.totalR, adherence_pct: adherencePct, trades_count: sm.trades,
+    completed_at: new Date().toISOString(),
+  };
+  sb.from('profx_leaderboard_entries').upsert([row], { onConflict: 'user_id,seed,symbol' })
+    .then(function (r) {
+      if (r.error) {
+        $('rp-msg').innerHTML += ' <span class="excl">Leaderboard submit failed: ' + esc(r.error.message) + '</span>';
+        return;
+      }
+      $('rp-msg').innerHTML += ' <span class="pos">Posted ' + R(sm.totalR) + ' to the "' +
+        esc(def.label) + '" leaderboard.</span>';
+      if ($('tab-leaderboard') && !$('tab-leaderboard').hidden) lbLoadAndRender();
+    });
+}
+
+/* ---- Leaderboard tab render ---- */
+function lbInit() {
+  var sel = $('lb-seedSelect');
+  if (!sel) return;
+  sel.innerHTML = FEATURED_SEEDS.map(function (def, i) {
+    return '<option value="' + i + '">' + esc(def.label) + '</option>'; }).join('');
+  if ($('lb-name')) $('lb-name').value = (state.settings && state.settings.lbDisplayName) || '';
+  lbUpdateSeedNote();
+}
+function lbUpdateSeedNote() {
+  var def = FEATURED_SEEDS[$('lb-seedSelect').value];
+  if (!def || !$('lb-seedNote')) return;
+  $('lb-seedNote').textContent = def.symbol + ' · ' + def.interval + ' bars · ' + def.from + ' to ' +
+    def.to + ' · seed ' + def.seed + (def.blurb ? ' — ' + def.blurb : '');
+}
+$('lb-seedSelect') && $('lb-seedSelect').addEventListener('change', function () {
+  lbUpdateSeedNote(); lbLoadAndRender();
+});
+$('lb-nameSave') && $('lb-nameSave').addEventListener('click', function () {
+  var v = $('lb-name').value.trim().slice(0, 40);
+  if (!state.settings) state.settings = {};
+  state.settings.lbDisplayName = v;
+  cacheSave();
+  $('lb-nameMsg').innerHTML = '<span class="pos">Saved. New leaderboard posts will show as "' +
+    esc(v || lbDisplayName()) + '".</span>';
+});
+
+function lbLoadAndRender() {
+  var tbody = document.querySelector('#lb-table tbody');
+  var def = FEATURED_SEEDS[$('lb-seedSelect').value];
+  if (!tbody || !def) return;
+  if (!sb) { tbody.innerHTML = '<tr><td colspan="6" class="mut">Leaderboard unavailable right now.</td></tr>'; return; }
+  tbody.innerHTML = '<tr><td colspan="6" class="mut">Loading…</td></tr>';
+  $('lb-yourRow').innerHTML = '';
+
+  var topQ = sb.from('profx_leaderboard_entries').select('*')
+    .eq('seed', def.seed).eq('symbol', def.symbol)
+    .order('r_multiple', { ascending: false }).limit(20);
+  var mineQ = authUser
+    ? sb.from('profx_leaderboard_entries').select('*')
+        .eq('seed', def.seed).eq('symbol', def.symbol).eq('user_id', authUser.id).maybeSingle()
+    : Promise.resolve({ data: null });
+
+  Promise.all([topQ, mineQ]).then(function (results) {
+    var top = results[0], mine = results[1];
+    if (top.error) { tbody.innerHTML = '<tr><td colspan="6" class="excl">' + esc(top.error.message) + '</td></tr>'; return; }
+    var rows = top.data || [];
+    tbody.innerHTML = !rows.length
+      ? '<tr><td colspan="6" class="mut">No entries yet — be the first to compete on this seed.</td></tr>'
+      : rows.map(function (row, i) {
+          var isMine = authUser && row.user_id === authUser.id;
+          return '<tr' + (isMine ? ' style="font-weight:600"' : '') + '><td>' + (i + 1) + '</td><td>' +
+            esc(row.display_name || 'trader') + (isMine ? ' <span class="tag pos">you</span>' : '') +
+            '</td><td class="num ' + sign(row.r_multiple) + '">' + R(row.r_multiple) + '</td><td class="num">' +
+            (row.adherence_pct === null ? '—' : pct(row.adherence_pct)) + '</td><td class="num">' +
+            row.trades_count + '</td><td class="mut">' + esc(String(row.completed_at || '').slice(0, 10)) +
+            '</td></tr>';
+        }).join('');
+
+    var myRow = mine.data;
+    var myRank = myRow ? rows.findIndex(function (r) { return r.user_id === myRow.user_id; }) : -1;
+    $('lb-yourRow').innerHTML = !authUser
+      ? cell('Your rank', 'Sign in to compete')
+      : !myRow
+      ? cell('Your rank', 'Not yet on this board — compete on seed ' + def.seed + ' from the Replay tab.')
+      : cell('Your rank', myRank === -1 ? 'outside top 20' : ('#' + (myRank + 1) + ' of ' + rows.length)) +
+        cell('Your R-multiple', R(myRow.r_multiple), sign(myRow.r_multiple)) +
+        cell('Your adherence', myRow.adherence_pct === null ? '—' : pct(myRow.adherence_pct));
+  });
+}
+
+(function () {
+  var lbSection = $('tab-leaderboard');
+  if (lbSection) {
+    document.querySelectorAll('nav [role=tab]').forEach(function (b) {
+      b.addEventListener('click', function () { if (b.dataset.tab === 'leaderboard') lbLoadAndRender(); });
+    });
+  }
+  lbInit();
+  rpRenderFeaturedSeeds();
+})();
+
+/* ================================================================== */
+/* COMMUNITY LESSONS — crowd-sourced curriculum submissions, moderated. */
+/* Reads/writes profx_lesson_submissions directly via sb (RLS-secured); */
+/* additive-only wiring, same pattern as the Progress tab block above.  */
+/* ================================================================== */
+var clApproved = [];
+var clMine = [];
+
+function clInit() {
+  $('cl-track').innerHTML = C.TRACKS.map(function (t) {
+    return '<option>' + esc(t) + '</option>';
+  }).join('');
+}
+
+function clFetchApproved() {
+  if (!sb) return Promise.resolve();
+  return sb.from('profx_lesson_submissions').select('*').eq('status', 'approved')
+    .order('reviewed_at', { ascending: false })
+    .then(function (r) {
+      clApproved = (!r.error && r.data) ? r.data : [];
+      renderCommunityLessons();
+    });
+}
+
+function clFetchMine() {
+  if (!sb || !authUser) { clMine = []; renderMySubmissions(); return Promise.resolve(); }
+  var uid = authUser.id;
+  return sb.from('profx_lesson_submissions').select('*').eq('user_id', uid)
+    .order('created_at', { ascending: false })
+    .then(function (r) {
+      if (!authUser || authUser.id !== uid) return;   // same race guard as authSyncPull()
+      clMine = (!r.error && r.data) ? r.data : [];
+      renderMySubmissions();
+    });
+}
+
+function renderCommunityLessons() {
+  $('cl-communityCount').textContent = '(' + clApproved.length + ' approved)';
+  $('cl-community').innerHTML = !clApproved.length
+    ? '<div class="note mut">No community lessons approved yet.</div>'
+    : clApproved.map(function (l) {
+        return '<details class="lesson"><summary><span><b>' + esc(l.title) + '</b></span>' +
+          '<span class="mut" style="font-size:10px;letter-spacing:.1em;text-transform:uppercase">' +
+          esc(l.track) + ' <span class="tag pos" style="margin-left:6px">community</span></span></summary>' +
+          '<div class="body">' +
+          '<p><span class="kicker">mechanism</span>' + esc(l.mechanism_text) + '</p>' +
+          '<p><span class="kicker">decision rule</span>' + esc(l.rule_text) + '</p>' +
+          '<p><span class="kicker">trigger threshold</span>' + esc(l.trigger_text) + '</p>' +
+          (l.compute_source
+            ? '<div class="worked"><span class="kicker">compute source — reference only, never executed</span>' +
+              '<pre style="white-space:pre-wrap;margin:6px 0 0;font-size:11.5px;font-family:inherit">' +
+              esc(l.compute_source) + '</pre></div>'
+            : '') +
+          '<div class="note" style="margin-top:10px">Submitted by ' + esc(l.author_display_name || 'a trader') + '</div>' +
+          '</div></details>';
+      }).join('');
+}
+
+function renderMySubmissions() {
+  var el = $('cl-mine');
+  if (!authUser) { el.className = 'note'; el.textContent = 'Sign in to see your submissions.'; return; }
+  el.className = '';
+  el.innerHTML = !clMine.length
+    ? '<div class="note mut">You haven\'t submitted a lesson yet.</div>'
+    : clMine.map(function (s) {
+        var badge = s.status === 'approved' ? '<span class="tag pos">approved</span>'
+          : s.status === 'rejected' ? '<span class="tag neg">rejected</span>'
+          : '<span class="tag">pending</span>';
+        return '<div class="worked" style="margin-bottom:10px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+          '<b>' + esc(s.title) + '</b>' + badge + '</div>' +
+          '<div class="mut" style="font-size:11px;margin-top:2px">' + esc(s.track) + ' · submitted ' +
+          new Date(s.created_at).toISOString().slice(0, 10) + '</div>' +
+          (s.status !== 'pending' && s.reviewer_notes
+            ? '<div class="note" style="margin-top:6px">Reviewer notes: ' + esc(s.reviewer_notes) + '</div>'
+            : '') +
+          '</div>';
+      }).join('');
+}
+
+function clRenderGate() {
+  var signedIn = !!authUser;
+  $('cl-signedOutMsg').style.display = signedIn ? 'none' : '';
+  $('cl-form').style.display = signedIn ? '' : 'none';
+  if (signedIn) clFetchMine(); else { clMine = []; renderMySubmissions(); }
+}
+
+$('cl-submitBtn').addEventListener('click', function () {
+  if (!sb || !authUser) { authOpen('signin'); return; }
+  var title = $('cl-title').value.trim();
+  var name = $('cl-name').value.trim();
+  var mechanism = $('cl-mechanism').value.trim();
+  var rule = $('cl-rule').value.trim();
+  var trigger = $('cl-trigger').value.trim();
+  var compute = $('cl-compute').value.trim();
+  var track = $('cl-track').value;
+  if (!title || !name || !mechanism || !rule || !trigger) {
+    $('cl-submitMsg').innerHTML = '<span class="excl">Track, display name, title, mechanism, rule and trigger are all required.</span>';
+    return;
+  }
+  var btn = $('cl-submitBtn');
+  btn.disabled = true;
+  $('cl-submitMsg').innerHTML = '<span class="mut">Submitting…</span>';
+  sb.from('profx_lesson_submissions').insert({
+    user_id: authUser.id, author_display_name: name, track: track, title: title,
+    mechanism_text: mechanism, rule_text: rule, trigger_text: trigger,
+    compute_source: compute || null
+  }).then(function (r) {
+    btn.disabled = false;
+    if (r.error) { $('cl-submitMsg').innerHTML = '<span class="excl">' + esc(r.error.message) + '</span>'; return; }
+    $('cl-submitMsg').innerHTML = '<span class="pos">Submitted — pending review.</span>';
+    $('cl-title').value = ''; $('cl-mechanism').value = ''; $('cl-rule').value = '';
+    $('cl-trigger').value = ''; $('cl-compute').value = '';
+    clFetchMine();
+  }).catch(function () {
+    btn.disabled = false;
+    $('cl-submitMsg').innerHTML = '<span class="excl">Network error — try again.</span>';
+  });
+});
+
+/* wrap authRenderSidebar rather than edit onAuthStateChange/authInit —   */
+/* same additive convention the Progress tab block uses just above.      */
+(function () {
+  clInit();
+  var _authRenderSidebar = authRenderSidebar;
+  authRenderSidebar = function () { _authRenderSidebar(); clRenderGate(); };
+  clRenderGate();
+  clFetchApproved();
+})();
 
 })();
 </script>
