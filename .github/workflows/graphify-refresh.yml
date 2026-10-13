@@ -1,0 +1,40 @@
+# auto-memory: refresh graphify-out on push to the default branch. Writes ONLY to the `graph` branch.
+name: graphify-refresh
+on:
+  push:
+    branches-ignore: [graph]
+permissions:
+  contents: write
+concurrency: { group: graphify-refresh, cancel-in-progress: true }
+jobs:
+  refresh:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -q graphifyy==0.9.89
+      - name: Restore previous graph (SHA256 cache) from graph branch
+        run: |
+          if git fetch -q --depth 1 origin graph:refs/remotes/origin/graph 2>/dev/null; then
+            git checkout origin/graph -- graphify-out 2>/dev/null || true
+            git reset -q
+          fi
+      - name: Incremental update (code only, no LLM)
+        run: graphify update . || graphify update . --force
+      - name: Commit to graph branch (never the default branch)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse -q --verify refs/remotes/origin/graph >/dev/null; then
+            git worktree add -q -B graph /tmp/gb origin/graph
+          else
+            git worktree add -q --detach /tmp/gb && git -C /tmp/gb checkout -q --orphan graph && git -C /tmp/gb rm -rqf . || true
+          fi
+          rm -rf /tmp/gb/graphify-out && cp -r graphify-out /tmp/gb/
+          cd /tmp/gb && git add -f graphify-out
+          git diff --cached --quiet && { echo "graph unchanged"; exit 0; }
+          git commit -qm "graphify: refresh for ${GITHUB_SHA::7}"
+          git push origin HEAD:refs/heads/graph

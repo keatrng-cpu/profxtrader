@@ -3,3 +3,5 @@ node_modules/
 .env
 .env.local
 .DS_Store
+ai/.sessions.log
+graphify-out/.post-commit.log
