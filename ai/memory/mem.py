@@ -4,8 +4,9 @@
   slice "<task>"   graph slice for a task (graphify query, small budget) - never the whole GRAPH_REPORT
   route "<task>"   pick a model via forge-atlas router
   stop             append session log entry; nudge once if code changed but ai/NOW.md didn't (Claude Stop hook)
-  post-commit      graphify update when the commit touched code files (installed by install-hook)
-  install-hook     install .git/hooks/post-commit (chains an existing hook)"""
+  context          write the `start` output to ai/.context.md (git hooks keep it fresh for Grok / hookless agents)
+  post-commit      graphify update when the commit touched code files, then refresh ai/.context.md
+  install-hook     install post-commit, post-checkout, prepare-commit-msg hooks (chains existing hooks)"""
 import json,os,shutil,subprocess as sp,sys,time
 ROOT=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 REPO=os.path.basename(ROOT); AI=os.path.join(ROOT,'ai'); LOG=os.path.join(AI,'.sessions.log')
@@ -42,14 +43,19 @@ def summary():
 def last_decisions(k=3):
   ls=[l for l in read(f'{AI}/DECISIONS.md').splitlines() if l.startswith('## ')]
   return '\n'.join(ls[-k:])
+def build(task=''):
+  return (f"# Auto-memory ({REPO})\n## ai/NOW.md (summary)\n{summary()}\n\n## Last decisions\n{last_decisions() or '(none)'}\n\n"
+       f"## Graph slice (recent files; for your task run `python3 ai/memory/mem.py slice \"<task>\"`)\n{slice_(task)}\n\n"
+       "End of task: overwrite ai/NOW.md with current truth, append ai/DECISIONS.md. Never write ai/HANDOFF.md.")
 def start(task=''):
   try: ev=json.loads(sys.stdin.read() or '{}') if not sys.stdin.isatty() else {}
   except Exception: ev={}
-  txt=(f"# Auto-memory ({REPO})\n## ai/NOW.md (summary)\n{summary()}\n\n## Last decisions\n{last_decisions() or '(none)'}\n\n"
-       f"## Graph slice (recent files; for your task run `python3 ai/memory/mem.py slice \"<task>\"`)\n{slice_(task)}\n\n"
-       "End of task: overwrite ai/NOW.md with current truth, append ai/DECISIONS.md. Never write ai/HANDOFF.md.")
+  txt=build(task)
   if ev.get('hook_event_name')=='SessionStart': print(json.dumps({"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":txt}}))
   else: print(txt)
+def context():
+  os.makedirs(AI,exist_ok=True); tmp=f'{AI}/.context.md.tmp'
+  open(tmp,'w').write(f"<!-- generated {time.strftime('%Y-%m-%d %H:%M %Z')} by ai/memory/mem.py context; do not edit -->\n"+build()+'\n'); os.replace(tmp,f'{AI}/.context.md')
 def route(task):
   r=f'{FA}/tools/route.py'
   if not os.path.exists(r): print('router unavailable: default Claude for code, Grok for research'); return
@@ -72,6 +78,8 @@ def post_commit():
   fs=sh('git','diff-tree','--no-commit-id','--name-only','-r','HEAD').split()
   fs=[f for f in fs if f.endswith(CODE) and not f.startswith(('graphify-out/','ai/'))]
   b=gbin()
+  try: context()
+  except Exception: pass
   if not fs or not b: return
   out=f'{ROOT}/graphify-out'
   if not os.path.exists(f'{out}/graph.json') and os.path.exists(f'{FA}/repos/{REPO}/graphify-out/graph.json'):
@@ -81,18 +89,28 @@ def post_commit():
     lg.write(f"{time.strftime('%F %T')} {len(fs)} changed: {' '.join(fs[:10])}\n"); lg.flush()
     if os.environ.get('MEM_SYNC'): sp.run([b,'update','.'],cwd=ROOT,stdout=lg,stderr=lg)
     else: sp.Popen((['flock',f'{out}/.update.lock'] if shutil.which('flock') else [])+[b,'update','.'],cwd=ROOT,stdout=lg,stderr=lg,start_new_session=True)
+HOOKS={'post-commit':'python3 "$(git rev-parse --show-toplevel)/ai/memory/mem.py" post-commit || true  # auto-memory\n',
+  'post-checkout':'(python3 "$(git rev-parse --show-toplevel)/ai/memory/mem.py" context >/dev/null 2>&1 &)  # auto-memory\n',
+  'prepare-commit-msg':'(python3 "$(git rev-parse --show-toplevel)/ai/memory/mem.py" context >/dev/null 2>&1 &)  # auto-memory\n'}
 def install_hook():
-  gd=sh('git','rev-parse','--git-path','hooks').strip(); hp=os.path.join(ROOT,gd,'post-commit') if not os.path.isabs(gd) else os.path.join(gd,'post-commit')
-  line='python3 "$(git rev-parse --show-toplevel)/ai/memory/mem.py" post-commit || true  # auto-memory\n'
-  cur=read(hp)
-  if 'auto-memory' in cur: print('already installed',hp); return
-  os.makedirs(os.path.dirname(hp),exist_ok=True)
-  open(hp,'w').write((cur if cur else '#!/bin/sh\n')+('' if cur.endswith('\n') or not cur else '\n')+line); os.chmod(hp,0o755)
+  gd=sh('git','rev-parse','--git-path','hooks').strip(); gd=gd if os.path.isabs(gd) else os.path.join(ROOT,gd)
+  os.makedirs(gd,exist_ok=True); n=0
+  for name,line in HOOKS.items():
+    hp=os.path.join(gd,name); cur=read(hp)
+    if line.strip() in cur: continue
+    lines=[l for l in cur.splitlines(True) if '# auto-memory' not in l] if cur else ['#!/bin/sh\n']
+    if lines and not lines[-1].endswith('\n'): lines[-1]+='\n'
+    # insert before a trailing `exit` so chained hooks still reach us
+    k=len(lines)
+    while k>1 and lines[k-1].strip() in ('','exit 0','exit'): k-=1
+    lines.insert(k,line); open(hp,'w').write(''.join(lines)); os.chmod(hp,0o755); n+=1
   ex=os.path.join(ROOT,sh('git','rev-parse','--git-path','info/exclude').strip())
   if not sh('git','ls-files','graphify-out').strip() and 'graphify-out/' not in read(ex): open(ex,'a').write('\ngraphify-out/\n')
-  print('installed',hp)
+  try: context()
+  except Exception: pass
+  print(f'{REPO}: {n} hook(s) installed/updated in {gd}')
 if __name__=='__main__':
   a=sys.argv[1:] or ['start']; c,arg=a[0],' '.join(a[1:])
-  try: {'start':lambda:start(arg),'slice':lambda:print(slice_(arg)),'route':lambda:route(arg),'stop':stop,'post-commit':post_commit,'install-hook':install_hook}[c]()
+  try: {'start':lambda:start(arg),'slice':lambda:print(slice_(arg)),'route':lambda:route(arg),'stop':stop,'post-commit':post_commit,'install-hook':install_hook,'context':context}[c]()
   except KeyError: print(__doc__)
   except Exception as e: print(f'mem.py {c}: {e}',file=sys.stderr)
