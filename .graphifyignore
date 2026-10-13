@@ -1,0 +1,16 @@
+# Forge Atlas T1: keep generated/vendored files out of the code graph
+graphify-out/
+node_modules/
+dist/
+build/
+.next/
+coverage/
+**/routeTree.gen.ts
+**/*.gen.ts
+**/*.min.js
+lib/i18n-dicts/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+**/fixtures/
+deploy.zip
